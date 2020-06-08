@@ -1,103 +1,126 @@
 import time
 import json
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from .prototools import load_json_string
+from typing import Any, Dict, Optional, List, Tuple, Union
 
-# Valid Request fields
-VALID = ['protocol', 'function', 'args', 'timestamp', 'peer']
+
+@dataclass
+class ProtoMessage:
+    protocol: Optional[str] = None,
+    signature: Optional[str] = None,
+    timestamp: float = time.time(),
+    function: Optional[str] = None,
+    args: Optional[List[Any]] = [],
+    result: Optional[bool] = False,
+    errors: Optional[str] = None
+
+    @classmethod
+    def from_json(cls, json_string: Union[Any]):
+        if isinstance(json_string, bytes):
+            return cls(
+                **load_json_string(
+                    json_string.decode()
+                )
+            )
+
+        if isinstance(json_string, str):
+            return cls(**load_json_string(json_string))
+
+        if isinstance(json_string, dict):
+            return cls(**json_string)
+
+        return None
+
+    @property
+    def as_encoded_string(self):
+        return json.dumps(self.__dict__).encode()
+
+    @property
+    def as_string(self):
+        return json.dumps(self.__dict__)
+
+    @property
+    def as_dict(self):
+        return self.__dict__
 
 
-# TODO::Rethink how to deal with Request/Response messages
-class BaseProtocol:
+class CoreProtocol:
     @property
     def name(self):
         return self.__class__.__name__
 
-    def make_response(
+    def create_message(
         self,
-        protocol: Optional[str] = None,
-        peer: Optional[str] = None,
         function: Optional[str] = None,
+        args: List[Any] = [],
         result: Optional[bool] = False,
-        error: Optional[str] = None,
-        **kwargs
+        errors: Optional[str] = None
     ):
-        # Set to protocol name if not set
-        protocol = protocol if protocol is not None else self.name
+        return ProtoMessage(
+            protocol=self.name,
+            signature=self.peer_id,
+            function=function,
+            args=args,
+            result=result,
+            errors=errors
+        ).as_encoded_string
 
-        # Set Peer ID
-        peer = peer if peer is not None else self.peer_id
+    def _valid_msg(self, msg: ProtoMessage):
+        # Create a dummy message and convert it to Dict
+        dummy = ProtoMessage().as_dict
+        msg_dict = msg.as_dict
 
-        return {
-            'protocol': protocol,
-            'peer': peer,
-            'function': function,
-            'result': result,
-            'error': error,
-            'timestamp': str(time.time()),
-            **kwargs
-        }
+        # Check if all fields in the msg are valid i.e in the dummy message
+        return dummy.keys() == msg_dict.keys()
 
-    def _purify_req(self, req: Any) -> str:
-        # Bytes -- decode and convert
-        if isinstance(req, bytes):
-            req = req.decode()
-            return self._req_to_json(req)
+    def _check_msg(self, msg: Dict, original: Any):
+        # Malformed request -- Not parsable
+        if msg is None:
+            return f'Malformed message: {original}'
 
-        # String -- convert
-        if isinstance(req, str):
-            return self._req_to_json(req)
+        # Message is missing fields
+        if not self._valid_msg(msg):
+            return f'Invalid message fields: {original}'
 
-        # Just return
-        if isinstance(req, dict):
-            return req
+        return ''
 
-        # No idea what it is
-        return None
-
-    def _req_to_json(self, req: str):
-        # Convert string to JSON dictionary
-        try:
-            return json.loads(str)
-        except json.JSONDecodeError:
-            return None
-
-    def _valid_req(self, req: Dict):
-        # Check all fields are present in request
-        for field in req:
-            if field not in VALID:
-                return False
-
-        return True
-
-    def parse_request(self, req: Any):
+    def parse_request(self, req: Any) -> Dict:
         # Parse the request to get the dictionary
-        parsed_req = self._purify_req(req)
+        parsed_req = ProtoMessage.from_json(req)
 
-        # Malformed request -- Not a dict
-        if parsed_req is None:
-            return self.make_response(
-                error=f'Malformed request: {req}'
-            )
-
-        # Invalid request -- Missing request fields
-        if not self._valid_req(parsed_req):
-            return self.make_response(
-                error=f'Invalid Request fields: {req}'
+        errors = self._check_msg(parsed_req, req)
+        if errors:
+            return self.create_message(
+                errors=errors
             )
 
         # Get function anme and function arguments
-        func_name, args = req['function'], req['args']
+        func_name, args = parsed_req.function, parsed_req.args
 
         # No function by the given name, return response
         if not hasattr(self, func_name):
-            return self.make_response(
+            return self.create_message(
                 function=func_name,
-                error='No such function'
+                args=args,
+                error=f'No such function: {func_name}'
             )
 
         # Call the func to get result and errors if present
         func = getattr(self, func_name)
+
         result, err = func(*args)
 
         # Return response
-        return self.make_response(function=func, result=result, error=err)
+        return self.create_message(
+            function=func_name, result=result, errors=err
+        )
+
+    def parse_response(self, resp: Any) -> Tuple[bool, str]:
+        parsed_resp = ProtoMessage.from_json(resp)
+
+        errors = self._check_msg(parsed_resp, resp)
+        if errors:
+            return self.create_message(errors=errors)
+
+        return parsed_resp
