@@ -7,4 +7,4 @@ from .prototools import (
     NodeAddress
 )
 from .discovery import DiscoveryProtocol
-from .time_protocol import TimeProtocol
+from .time import TimeProtocol

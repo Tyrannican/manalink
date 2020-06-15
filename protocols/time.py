@@ -9,26 +9,30 @@
 
 # System imports
 import time
-from typing import List
+from typing import List, Optional
 
 # Protocol helpers
 from .protocol import (
-    CoreProtocol, PeerAddress, ProtoPort, ProtoResult
+    CoreProtocol, NodeAddress, ProtoPort, ProtoResult, ProtoErrorType
 )
 
 
 class TimeProtocol(CoreProtocol):
-    """Simple Time Protocol to inform peers of the current time
+    """Simple Time Protocol to inform nodes of the current time
 
     Args:
-        peers (List[str]): Known peers
+        nodes (List[str]): Known nodes
 
     Inherits:
         CoreProtocol: Pillar of all protocols
     """
 
-    def __init__(self, peers: List[str] = []):
-        super().__init__(peers=peers, protocol_port=ProtoPort.TIME)
+    def __init__(
+        self, nodes: List[str] = [], host_address: Optional[str] = '0.0.0.0'
+    ):
+        super().__init__(
+            nodes=nodes, protocol_port=ProtoPort.TIME
+        )
 
     async def broadcast(self):
         """Main broadcast loop to ask for the time
@@ -37,15 +41,15 @@ class TimeProtocol(CoreProtocol):
         while True:
             await self.broadcaster(self.get_time)
 
-    async def get_time(self, peer: PeerAddress):
-        """Asks a peer for the time and logs it
+    async def get_time(self, node: NodeAddress):
+        """Asks a node for the time and logs it
 
         Args:
-            peer (PeerAddress): Address of the peer
+            node (NodeAddress): Address of the node
         """
 
-        # Send request to peer and get response
-        response = await self.notify_peer(peer, 'current_time')
+        # Send request to node and get response
+        response = await self.notify_node(node, 'current_time')
 
         # Split status, errors, and results
         status, results, errors = (
@@ -54,7 +58,8 @@ class TimeProtocol(CoreProtocol):
 
         # Not Ok, log errors
         if not status:
-            self.logger.warning(errors.message)
+            if errors.error_type != ProtoErrorType.CONNECTION:
+                self.logger.warning(errors.message)
             return
 
         # Get the time and log it

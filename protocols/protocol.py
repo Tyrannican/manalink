@@ -73,6 +73,7 @@ class CoreProtocol:
         self.protocol_port = protocol_port.value
         self.nodes = nodes
         self._buf = buffer
+        self._pulse_timer = 10
         self.logger = make_logger(self.name)
 
         self.logger.info(
@@ -95,7 +96,24 @@ class CoreProtocol:
 
         await asyncio.gather(
             self.node_listener(),
-            self.broadcast()
+            self.broadcast(),
+            self.pulse_nodes()
+        )
+
+    async def broadcast(self, broadcast_timer: int = 10):
+        """Broadcast loop,
+        should call the `broadcaster` in an infinite loop with extra additions
+        if necessary
+
+        Args:
+            broadcast_timer (int): Time between node broadcasts
+
+        Raises:
+            NotImplementedError: Not implemented
+        """
+
+        raise NotImplementedError(
+            'Method requires implementation in child protocols!'
         )
 
     async def broadcaster(self, callback: Callable, broadcast_timer: int = 10):
@@ -176,10 +194,19 @@ class CoreProtocol:
 
         # Attempt to open the connection
         try:
-            # Oppen connection
+            if isinstance(node_address, str):
+                node_address = NodeAddress(
+                    host=node_address, port=self.protocol_port
+                )
+
+            # Open connection
             reader, writer = await asyncio.open_connection(
                 host=node_address.host, port=node_address.port
             )
+
+            # Update host address on outgoing connections
+            sock = writer.get_extra_info('socket')
+            self.host_address = sock.getsockname()[0]
 
             # Send request
             writer.write(request)
@@ -207,6 +234,25 @@ class CoreProtocol:
                 protocol=self.name,
                 results=result
             )
+
+    async def pulse_nodes(self):
+        """Pulses each node, determining if it is still present
+        If not, remove from peer list
+        """
+
+        # Loop forever
+        while True:
+            # If the node response to ping, keep in list
+            for node in self.nodes:
+                if (
+                    not await self.ping(node)
+                    and self.protocol_port == ProtoPort.DISCOVERY.value
+                ):
+                    self.nodes.remove(node)
+                    break
+
+            # Wait between broadcasts
+            await asyncio.sleep(self._pulse_timer)
 
     async def ping(self, node: str) -> bool:
         """Ping an address and check for a response
@@ -254,6 +300,12 @@ class CoreProtocol:
             writer (asyncio.StreamWriter): Write to the node
         """
 
+        # Update node list with newly conencted node
+        # Update host_address on incoming connections
+        sock = writer.get_extra_info('socket')
+        self.host_address = sock.getsockname()[0]
+        self._update_nodes(sock.getpeername()[0])
+
         # Get the request and process for a response
         request = await reader.read(self._buf)
         response = self.parse_request(request)
@@ -265,6 +317,17 @@ class CoreProtocol:
         # Close writer
         writer.close()
         await writer.wait_closed()
+
+    def _update_nodes(self, host: str):
+        """Update the node list with a new connection if not present
+
+        Args:
+            host (str): Incoming node connection
+        """
+
+        # Not is not present and isn't the server
+        if host not in self.nodes and host != self.host_address:
+            self.nodes.append(host)
 
     def create_message(
         self,
