@@ -17,7 +17,7 @@ from typing import (
 from .prototools import (
     ProtoErrorType,
     ProtoMessage,
-    PeerAddress,
+    NodeAddress,
     ProtoResult,
     ProtoError,
     ProtoPort
@@ -59,19 +59,19 @@ class CoreProtocol:
     """Core of the Protocol on which each subsequent protocol will build upon
 
     Args:
-        peer_address (PeerAddress): Address of the Protocol's peer listener
+        node_address (NodeAddress): Address of the Protocol's node listener
         buffer (int): Default size of the incoming buffer
     """
 
     def __init__(
         self,
-        peers: List[str] = [],
+        nodes: List[str] = [],
         buffer: int = 4096,
         protocol_port: ProtoPort = ProtoPort.UNUSED
     ):
         self.host_address = '0.0.0.0'
         self.protocol_port = protocol_port.value
-        self.peers = peers
+        self.nodes = nodes
         self._buf = buffer
         self.logger = make_logger(self.name)
 
@@ -94,12 +94,12 @@ class CoreProtocol:
         """
 
         await asyncio.gather(
-            self.peer_listener(),
+            self.node_listener(),
             self.broadcast()
         )
 
     async def broadcaster(self, callback: Callable, broadcast_timer: int = 10):
-        """Broadcaster which calls the callback function for each peer and waits
+        """Broadcaster which calls the callback function for each node and waits
         X seconds
 
         Args:
@@ -108,31 +108,31 @@ class CoreProtocol:
                                             Defaults to 10.
         """
 
-        # Create a list of tasks calling the callback for each peer
+        # Create a list of tasks calling the callback for each node
         tasks = [
             asyncio.create_task(
                 callback(
-                    PeerAddress(host=peer, port=self.protocol_port)
+                    NodeAddress(host=node, port=self.protocol_port)
                 )
             )
-            for peer in self.peers
+            for node in self.nodes
         ]
 
         # Execute the tasks and wait
         await asyncio.gather(*tasks)
         await asyncio.sleep(broadcast_timer)
 
-    async def notify_peer(
+    async def notify_node(
         self,
-        peer_address: PeerAddress,
+        node_address: NodeAddress,
         function: str,
         args: List[Any] = []
     ) -> ProtoResult:
-        """Creates and sends a ProtoMessage to a peer and awaits a response
+        """Creates and sends a ProtoMessage to a node and awaits a response
         from them.
 
         Args:
-            peer_address (PeerAddress): Address of the peer
+            node_address (NodeAddress): Address of the node
             function (str): Protocol function to call
             args (List[Any]): Protocol function arguments
 
@@ -147,8 +147,8 @@ class CoreProtocol:
         )
 
         # Get response
-        response = await self.open_peer_connection(
-            peer_address=peer_address, request=request
+        response = await self.open_node_connection(
+            node_address=node_address, request=request
         )
 
         # Debug logger
@@ -160,25 +160,25 @@ class CoreProtocol:
 
         return response.results
 
-    async def open_peer_connection(
-        self, peer_address: PeerAddress, request: ByteString
+    async def open_node_connection(
+        self, node_address: NodeAddress, request: ByteString
     ) -> ProtoMessage:
-        """Attempts to open a connection with a peer to send requests and
+        """Attempts to open a connection with a node to send requests and
         receive responses
 
         Args:
-            peer_address (PeerAddress): Peer to connect to
+            node_address (NodeAddress): Peer to connect to
             request (ByteString): Request as an encoded string
 
         Returns:
-            ProtoMessage: Response form the peer
+            ProtoMessage: Response form the node
         """
 
         # Attempt to open the connection
         try:
             # Oppen connection
             reader, writer = await asyncio.open_connection(
-                host=peer_address.host, port=peer_address.port
+                host=node_address.host, port=node_address.port
             )
 
             # Send request
@@ -199,7 +199,7 @@ class CoreProtocol:
         except (ConnectionRefusedError, ConnectionResetError):
             # Return basic response
             result = ProtoResult.error_result(
-                err_msg=f'{peer_address.host} ({peer_address.port}) is down.',
+                err_msg=f'{node_address.host} ({node_address.port}) is down.',
                 err_type=ProtoErrorType.CONNECTION
             )
 
@@ -208,11 +208,11 @@ class CoreProtocol:
                 results=result
             )
 
-    async def ping(self, peer: str) -> bool:
+    async def ping(self, node: str) -> bool:
         """Ping an address and check for a response
 
         Args:
-            peer (str): Peer to ping
+            node (str): Peer to ping
 
         Returns:
             bool: If a connection is established
@@ -221,7 +221,7 @@ class CoreProtocol:
         try:
             # Attempt connection
             await asyncio.open_connection(
-                host=peer, port=self.protocol_port
+                host=node, port=self.protocol_port
             )
 
             # Connection successful
@@ -231,9 +231,9 @@ class CoreProtocol:
             # Peer is offline, unsuccessful
             return False
 
-    async def peer_listener(self):
+    async def node_listener(self):
         """Peer Listener loop.
-        Listens for peers and processes their Protocol requests
+        Listens for nodes and processes their Protocol requests
         """
 
         server = await asyncio.start_server(
@@ -250,8 +250,8 @@ class CoreProtocol:
         a response based on the response
 
         Args:
-            reader (asyncio.StreamReader): Read from the incoming peer
-            writer (asyncio.StreamWriter): Write to the peer
+            reader (asyncio.StreamReader): Read from the incoming node
+            writer (asyncio.StreamWriter): Write to the node
         """
 
         # Get the request and process for a response

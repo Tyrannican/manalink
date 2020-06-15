@@ -1,7 +1,7 @@
 """
 .. module:: protocols.discovery
     :platforms: Unix
-    :synopsis: Discovery Protocol for finding new peers
+    :synopsis: Discovery Protocol for finding new nodes
 
 .. moduleauthor:: Graham Keenan 2020
 
@@ -18,10 +18,10 @@ from .protocol import (
 
 
 class DiscoveryProtocol(CoreProtocol):
-    """Discovery Protocol for discovering new peers
+    """Discovery Protocol for discovering new nodes
 
     Args:
-        peer_sig (str): Unique signature for the peer
+        node_sig (str): Unique signature for the node
         port (int): Port where the Protocol will be active on
 
     Inherits:
@@ -30,54 +30,54 @@ class DiscoveryProtocol(CoreProtocol):
 
     def __init__(
         self,
-        peers: List[str] = [],
+        nodes: List[str] = [],
         protocol_port: ProtoPort = ProtoPort.DISCOVERY
     ):
-        super().__init__(peers=peers, protocol_port=protocol_port)
+        super().__init__(nodes=nodes, protocol_port=protocol_port)
 
-    async def run(self, initial_peers: List[str] = []):
+    async def run(self, initial_nodes: List[str] = []):
         """Runs all tasks assigned
 
         Args:
-            initial_peers (List[str], optional): List of initial peers to
+            initial_nodes (List[str], optional): List of initial nodes to
                                             attempt to contact. Defaults to [].
         """
 
         await asyncio.gather(
-            self.initial_discovery(initial_peers),
-            self.request_for_peers(),
-            self.peer_listener()
+            self.initial_discovery(initial_nodes),
+            self.request_for_nodes(),
+            self.node_listener()
         )
 
-    async def request_for_peers(self):
+    async def request_for_nodes(self):
         """Main broadcast loop.
-        Communicates with peers on a set interval.
-        Each peer response is processed and further action can be taken=
-        in the `process_peer_response()` implementation
+        Communicates with nodes on a set interval.
+        Each node response is processed and further action can be taken=
+        in the `process_node_response()` implementation
 
         Args:
-            peers (List[PeerAddress]): List of known peer addresses
+            nodes (List[PeerAddress]): List of known node addresses
             broadcast_time (int, optional): Interval between broadcasts.
                                             Defaults to 10.
         """
 
         while True:
-            await self.broadcaster(self.ask_for_peers)
+            await self.broadcaster(self.ask_for_nodes)
             self.logger.info(
-                f'Looking for peers\t\u001b[32mTotal\u001b[0m={len(self.peers)}'
+                f'Looking for nodes\t\u001b[32mTotal\u001b[0m={len(self.nodes)}'
             )
 
-    async def ask_for_peers(self, peer: str):
+    async def ask_for_nodes(self, node: str):
         """Main function used by the `broadcast()` method.
-        This is the entry point for the broadcast loop in which other peer
+        This is the entry point for the broadcast loop in which other node
         operations may be performed.
 
         Args:
-            peer (PeerAddress): Peer to contact
+            node (PeerAddress): Peer to contact
         """
 
-        # Send request for peers and await response
-        response = await self.notify_peer(peer, 'known_peers')
+        # Send request for nodes and await response
+        response = await self.notify_node(node, 'known_nodes')
         status, errors = response.status, response.errors
 
         # Not Ok, log errors
@@ -86,33 +86,33 @@ class DiscoveryProtocol(CoreProtocol):
 
             # Error was a connectio nissue
             if errors.error_type == ProtoErrorType.CONNECTION:
-                # Unregister the peer
-                self.deregister(peer)
+                # Unregister the node
+                self.deregister(node)
 
             return
 
-        # Get the new peers from the result
-        new_peers = response.results[0]
+        # Get the new nodes from the result
+        new_nodes = response.results[0]
 
-        # Iterate through all new peers
-        for new_peer in new_peers:
+        # Iterate through all new nodes
+        for new_node in new_nodes:
             # If they're alive, register them
-            if await self.ping(new_peer):
-                self.register(new_peer)
+            if await self.ping(new_node):
+                self.register(new_node)
 
-    async def initial_discovery(self, initial_peers: List[str] = []):
-        """Contacts a list of initial peers to seed the discovery of newer peers
+    async def initial_discovery(self, initial_nodes: List[str] = []):
+        """Contacts a list of initial nodes to seed the discovery of newer nodes
 
         Args:
-            initial_peers (List[str], optional): Peers to attempt to contact.
+            initial_nodes (List[str], optional): Peers to attempt to contact.
                                                 Defaults to [].
         """
 
-        # Iterate through each peer
-        for peer in initial_peers:
+        # Iterate through each node
+        for node in initial_nodes:
             # Send request to register self with them and await response
-            response = await self.notify_peer(
-                peer, 'register', args=[self.host_address]
+            response = await self.notify_node(
+                node, 'register', args=[self.host_address]
             )
             status, errors = response.status, response.errors
 
@@ -121,56 +121,56 @@ class DiscoveryProtocol(CoreProtocol):
                 self.logger.warning(errors.message)
                 return
 
-            # Register them as a peer
-            self.register(peer)
+            # Register them as a node
+            self.register(node)
 
-    def known_peers(self) -> ProtoResult:
-        """Return all known peers to the host
+    def known_nodes(self) -> ProtoResult:
+        """Return all known nodes to the host
 
         Returns:
-            ProtoResult: Known peers
+            ProtoResult: Known nodes
         """
 
         return ProtoResult(
-            results=[self.peers]
+            results=[self.nodes]
         )
 
-    def register(self, peer: str) -> ProtoResult:
-        """Register the peer as a known peer
+    def register(self, node: str) -> ProtoResult:
+        """Register the node as a known node
 
         Args:
-            peer (str): Peer to register
+            node (str): Peer to register
 
         Returns:
             ProtoResult: Basic Result
         """
 
-        # Check the peer is not already registered and not the host
-        if peer not in self.peers and peer != self.host_address:
-            # Add peer to list
-            self.peers.append(peer)
+        # Check the node is not already registered and not the host
+        if node not in self.nodes and node != self.host_address:
+            # Add node to list
+            self.nodes.append(node)
             self.logger.info(
-                f'Registered new peer: {peer} ({self.protocol_port})'
+                f'Registered new node: {node} ({self.protocol_port})'
             )
 
         return ProtoResult()
 
-    def deregister(self, peer: str) -> ProtoResult:
-        """Deregister a peer from the list of known peers
+    def deregister(self, node: str) -> ProtoResult:
+        """Deregister a node from the list of known nodes
 
         Args:
-            peer (str): Peer to deregister
+            node (str): Peer to deregister
 
         Returns:
             ProtoResult: Basic Result
         """
 
-        # Peer is present in known peers list
-        if peer in self.peers:
-            # Remove from peer list
-            self.peers = [p for p in self.peers if p != peer]
+        # Peer is present in known nodes list
+        if node in self.nodes:
+            # Remove from node list
+            self.nodes = [p for p in self.nodes if p != node]
             self.logger.info(
-                f'Unregistered peer: {peer} ({self.protocol_port}).'
+                f'Unregistered node: {node} ({self.protocol_port}).'
             )
 
         return ProtoResult()

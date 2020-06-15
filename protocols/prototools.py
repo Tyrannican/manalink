@@ -38,7 +38,7 @@ class ProtoErrorType(Enum):
 
     NONE = -1  # No Error
     MESSAGING = 0  # Error in processing received requests
-    CONNECTION = 1  # Connection error between peers
+    CONNECTION = 1  # Connection error between nodes
     EXECUTION = 2  # Error in executing the requested function
 
 
@@ -82,7 +82,7 @@ class ProtoError:
         }
 
 
-class PeerAddress:
+class NodeAddress:
     """Class representing a host/port pair
 
     Args:
@@ -97,13 +97,13 @@ class PeerAddress:
         self.port = port.value if isinstance(port, ProtoPort) else port
 
     def __repr__(self) -> str:
-        """Human-readable PeerAddress
+        """Human-readable NodeAddress
 
         Returns:
-            str: PeerAddress info as a string
+            str: NodeAddress info as a string
         """
 
-        return f'PeerAddress(host={self.host}, port={self.port}'
+        return f'NodeAddress(host={self.host}, port={self.port}'
 
     def set_port(self, new_port: Union[ProtoPort, int]):
         """Set the port to a new value
@@ -118,7 +118,7 @@ class PeerAddress:
 
     @property
     def as_dict(self) -> Dict:
-        """PeerAddress represented as a Dict
+        """NodeAddress represented as a Dict
 
         Returns:
             Dict: Host/Port information
@@ -128,19 +128,19 @@ class PeerAddress:
 
     @classmethod
     def from_dict(cls, info: Dict):
-        """Build a PeerAddress from a dict
+        """Build a NodeAddress from a dict
 
         Args:
             info (Dict): Dict info
 
         Returns:
-            PeerAddress: New PeerAddress
+            NodeAddress: New NodeAddress
         """
 
         if isinstance(info, dict):
             return cls(**info)
 
-        if isinstance(info, PeerAddress):
+        if isinstance(info, NodeAddress):
             return info
 
 
@@ -152,14 +152,14 @@ class ProtoResult:
         errors: Optional[Any] = None
     ):
         """Struct to hold the status, results, and erros of any Protocol
-        method calls to send back to another Peer
+        method calls to send back to another Node
 
         Args:
             status (Optional[bool], optional): Success of the operation.
                                                 Defaults to True.
 
             results (Optional[List[Any]], optional): Any results from the method
-                        call to send back to the peer. Defaults to [].
+                        call to send back to the node. Defaults to [].
 
             errors (Optional[Any], optional): Errors encountered, if any.
                                                 Defaults to None.
@@ -235,7 +235,7 @@ class ProtoResult:
 
 
 class ProtoMessage:
-    """Class representing as Protocol Message sent between two peers.
+    """Class representing as Protocol Message sent between two nodes.
 
     Args:
         protocol (Optional[str]): Name of the Protocol. Defaults to None.
