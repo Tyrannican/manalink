@@ -7,7 +7,6 @@
 
 """
 # System imports
-import logging
 import asyncio
 from typing import (
     Any, Dict, Optional, List, ByteString, Callable
