@@ -74,6 +74,7 @@ class CoreProtocol:
         self.nodes = nodes
         self._buf = buffer
         self._pulse_timer = 10
+        self._node_lock = asyncio.Lock()
         self.logger = make_logger(self.name)
 
         self.logger.info(
@@ -248,7 +249,8 @@ class CoreProtocol:
                     not await self.ping(node)
                     and self.protocol_port == ProtoPort.DISCOVERY.value
                 ):
-                    self.nodes.remove(node)
+                    async with self._node_lock:
+                        self.nodes.remove(node)
                     break
 
             # Wait between broadcasts
@@ -327,7 +329,8 @@ class CoreProtocol:
 
         # Not is not present and isn't the server
         if host not in self.nodes and host != self.host_address:
-            self.nodes.append(host)
+            async with self._node_lock:
+                self.nodes.append(host)
 
     def create_message(
         self,
