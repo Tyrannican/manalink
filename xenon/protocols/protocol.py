@@ -21,39 +21,9 @@ from ..prototools import (
     ProtoResult,
     ProtoError,
     ProtoPort,
-    address_in_use
+    address_in_use,
+    make_logger
 )
-
-
-# TODO::Move somewhere else
-def make_logger(name: str) -> logging.Logger:
-    """Create a basic logger with Stream handling
-
-    Args:
-        name (str): Nmae of the logger
-
-    Returns:
-        logging.Logger: Logger
-    """
-
-    # Set default level to INFO
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-
-    # Add basic formatting
-    formatter = logging.Formatter(
-        '%(name)s::%(levelname)s [%(asctime)s] %(message)s'
-    )
-
-    # Add stream handler to display on stdout/stderr
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.DEBUG)
-
-    sh.setFormatter(formatter)
-
-    logger.addHandler(sh)
-
-    return logger
 
 
 class CoreProtocol:
