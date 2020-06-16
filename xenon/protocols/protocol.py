@@ -14,13 +14,14 @@ from typing import (
 )
 
 # Prototool helpers
-from .prototools import (
+from ..prototools import (
     ProtoErrorType,
     ProtoMessage,
     NodeAddress,
     ProtoResult,
     ProtoError,
-    ProtoPort
+    ProtoPort,
+    address_in_use
 )
 
 
@@ -95,6 +96,16 @@ class CoreProtocol:
         """Basic run loop, can be overridden
         """
 
+        # Address for this protocol is already running, clash with another
+        # protocol or another service on the machine
+        if address_in_use(self.host_address, self.protocol_port):
+            self.logger.warning(
+                f'Address {self.host_address}:{self.protocol_port} is already\
+ in use. {self.name} may already be running on this machine.'
+            )
+            return
+
+        # Execute loop
         await asyncio.gather(
             self.node_listener(),
             self.broadcast(),
@@ -306,7 +317,7 @@ class CoreProtocol:
         # Update host_address on incoming connections
         sock = writer.get_extra_info('socket')
         self.host_address = sock.getsockname()[0]
-        self._update_nodes(sock.getpeername()[0])
+        await self._update_nodes(sock.getpeername()[0])
 
         # Get the request and process for a response
         request = await reader.read(self._buf)
@@ -320,7 +331,7 @@ class CoreProtocol:
         writer.close()
         await writer.wait_closed()
 
-    def _update_nodes(self, host: str):
+    async def _update_nodes(self, host: str):
         """Update the node list with a new connection if not present
 
         Args:

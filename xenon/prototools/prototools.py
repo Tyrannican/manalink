@@ -13,6 +13,7 @@ from typing import (
 )
 
 import time
+import socket
 from enum import Enum
 from dataclasses import dataclass
 
@@ -464,3 +465,22 @@ def _ensure_results_serializable(results: List[Any]) -> List[Any]:
             )
 
     return new_results
+
+def address_in_use(host: str, port: int) -> bool:
+    """Determines if an address is already in use by a socket
+
+    Args:
+        host (str): Address
+        port (int): Port
+
+    Returns:
+        bool: In use or not
+    """
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((host, port))
+        s.close()
+        return False
+    except OSError:
+        return True

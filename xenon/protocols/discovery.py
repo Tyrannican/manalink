@@ -11,8 +11,9 @@
 from typing import List
 
 # Protocol imports
-from .protocol import (
-    CoreProtocol, ProtoResult, ProtoPort, ProtoErrorType
+from .protocol import CoreProtocol
+from ..prototools import (
+    ProtoResult, ProtoPort, ProtoErrorType
 )
 
 
@@ -49,7 +50,7 @@ class DiscoveryProtocol(CoreProtocol):
         """
 
         while True:
-            await self.broadcaster(self.ask_for_nodes)
+            await self.broadcaster(self.ask_for_nodes, broadcast_timer=5)
             self.logger.info(
                 f'Looking for nodes\t\u001b[32mTotal\u001b[0m={len(self.nodes)}'
             )
@@ -80,7 +81,7 @@ class DiscoveryProtocol(CoreProtocol):
 
         # Iterate through all new nodes
         for new_node in new_nodes:
-            self._update_nodes(new_node)
+            await self._update_nodes(new_node)
 
     def known_nodes(self) -> ProtoResult:
         """Return all known nodes to the host
