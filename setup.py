@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='xenon',
+    name='rhenium',
     version='0.0.1',
     author='Graham Keenan',
     author_email='graham.keenan@outlook.com',
