@@ -8,14 +8,14 @@
 """
 
 # System imports
-from typing import List
+import asyncio
+from typing import List, Optional
 
 # Protocol imports
 from .protocol import CoreProtocol
 from ..prototools import (
-    ProtoResult, ProtoPort, ProtoErrorType
+    ProtoResult, ProtoPort, ProtoErrorType, address_in_use, DISCOVERY_NODES
 )
-
 
 class DiscoveryProtocol(CoreProtocol):
     """Discovery Protocol for discovering new nodes
@@ -31,11 +31,40 @@ class DiscoveryProtocol(CoreProtocol):
     def __init__(
         self,
         nodes: List[str] = [],
-        protocol_port: ProtoPort = ProtoPort.DISCOVERY
+        protocol_port: ProtoPort = ProtoPort.DISCOVERY,
+        continuous_discovery: Optional[bool] = True
     ):
         super().__init__(
             nodes=nodes, protocol_port=protocol_port
         )
+
+        # Continually search for new peers from whitelist if none are listed
+        self.continuous_discovery = continuous_discovery
+
+    async def run(self):
+        # Address for this protocol is already running, clash with another
+        # protocol or another service on the machine
+        if address_in_use(self.host_address, self.protocol_port):
+            self.logger.warning(
+                f'Address {self.host_address}:{self.protocol_port} is already\
+ in use. {self.name} may already be running on this machine.'
+            )
+            return
+
+        # Execute loop
+        if self.continuous_discovery:
+            await asyncio.gather(
+                self.node_listener(),
+                self.broadcast(),
+                self.pulse_nodes(),
+                self.node_searcher()
+            )
+        else:
+            await asyncio.gather(
+                self.node_listener(),
+                self.broadcast(),
+                self.pulse_nodes()
+            )
 
     async def broadcast(self):
         """Main broadcast loop.
@@ -51,8 +80,14 @@ class DiscoveryProtocol(CoreProtocol):
 
         while True:
             await self.broadcaster(self.ask_for_nodes, broadcast_timer=5)
+
+            # Non-discovery nodes (Actual nodes on the network)
+            nd_nodes = [
+                node for node in self.nodes if node not in DISCOVERY_NODES
+            ]
+
             self.logger.info(
-                f'Looking for nodes\t\u001b[32mTotal\u001b[0m={len(self.nodes)}'
+                f'Looking for nodes\t\u001b[32mTotal\u001b[0m={len(nd_nodes)}'
             )
 
     async def ask_for_nodes(self, node: str):
@@ -82,6 +117,27 @@ class DiscoveryProtocol(CoreProtocol):
         # Iterate through all new nodes
         for new_node in new_nodes:
             await self._update_nodes(new_node)
+
+    async def node_searcher(self, search_time: int = 10):
+        """Continually searches for known discovery nodes when there are no
+        other nodes connected
+
+        Args:
+            search_time (int): Time between each search
+        """
+
+        while True:
+            # We have actual nodes present, just continue on
+            if len(self.nodes) > 0:
+                await asyncio.sleep(search_time)
+                continue
+
+            # No nodes, check if discovery nodes are open
+            for node in DISCOVERY_NODES:
+                await self._update_nodes(node)
+
+            # Short pause
+            await asyncio.sleep(search_time)
 
     def known_nodes(self) -> ProtoResult:
         """Return all known nodes to the host
