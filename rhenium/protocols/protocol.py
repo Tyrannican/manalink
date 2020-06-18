@@ -74,11 +74,16 @@ class CoreProtocol:
             )
             return
 
-        # Execute loop
-        await asyncio.gather(
+        # Keep track of all Tasks to be executed
+        tasks = [
             self.node_listener(),
             self.broadcast(),
             self.pulse_nodes()
+        ]
+
+        # Execute loop
+        await asyncio.gather(
+            *tasks
         )
 
     async def broadcast(self, broadcast_timer: int = 10):

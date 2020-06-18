@@ -51,19 +51,23 @@ class DiscoveryProtocol(CoreProtocol):
             )
             return
 
+        # Kee ptrack of async Tasks to execute
+        tasks = [
+            self.node_listener(),
+            self.broadcast(),
+            self.pulse_nodes()
+        ]
+
         # Execute loop
         if self.continuous_discovery:
+            tasks.append(self.node_searcher())
+
             await asyncio.gather(
-                self.node_listener(),
-                self.broadcast(),
-                self.pulse_nodes(),
-                self.node_searcher()
+                *tasks
             )
         else:
             await asyncio.gather(
-                self.node_listener(),
-                self.broadcast(),
-                self.pulse_nodes()
+                *tasks
             )
 
     async def broadcast(self):
