@@ -14,7 +14,12 @@ from typing import List, Optional
 # Protocol imports
 from .protocol import CoreProtocol
 from ..prototools import (
-    ProtoResult, ProtoPort, ProtoErrorType, address_in_use, DISCOVERY_NODES
+    ProtoResult,
+    ProtoPort,
+    ProtoErrorType,
+    address_in_use,
+    colour_item,
+    DISCOVERY_NODES
 )
 
 class DiscoveryProtocol(CoreProtocol):
@@ -91,8 +96,8 @@ class DiscoveryProtocol(CoreProtocol):
             ]
 
             self.logger.info(
-                f'Looking for nodes\t\u001b[32mTotal\u001b[0m={len(nd_nodes)}'
-            )
+                f'Looking for nodes\t{colour_item("Total", color="green")}\
+={len(nd_nodes)}')
 
     async def ask_for_nodes(self, node: str):
         """Main function used by the `broadcast()` method.

@@ -1,42 +1,44 @@
 """
 .. module:: prototools.general
     :platforms: Unix
-    :synopsis: General logger mainly used by the Protocols
+    :synopsis: General functions
 
 .. moduleauthor:: Graham Keenan 2020
 
 """
+from typing import Optional
 
-# System imports
-import logging
+ANSI_COLORS = {
+    'black': '\u001b[30m',
+    'red': '\u001b[31m',
+    'green': '\u001b[32m',
+    'yellow': '\u001b[33m',
+    'blue': '\u001b[34m',
+    'magenta': '\u001b[35m',
+    'cyan': '\u001b[36m',
+    'white': '\u001b[37m',
+    'bold': '\u001b[1m',
+    'reset': '\u001b[0m'
+}
 
-def make_logger(name: str) -> logging.Logger:
-    """Create a basic logger with Stream handling
+def colour_item(
+    msg: str, color: Optional[str] = '', bold: Optional[bool] = False
+) -> str:
+    """Colours a message with an ANSI color and escapes it at the end.
+    Options for bold text.
 
     Args:
-        name (str): Name of the logger
+        msg (str): Message to colour
+        color (str): Colour of the text
+        bold (Optional[bool], optional): Bold the message. Defaults to False.
 
     Returns:
-        logging.Logger: Logger
+        str: ANSI formatted message
     """
 
-    # Set default level to INFO
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    color = ANSI_COLORS[color] if color in ANSI_COLORS else ''
 
-    # Add basic formatting
-    formatter = logging.Formatter(
-        '%(name)s::%(levelname)s [%(asctime)s] %(message)s'
+    return (
+        f'{color}{ANSI_COLORS["bold"]}{msg}{ANSI_COLORS["reset"]}' if bold
+        else f'{color}{msg}{ANSI_COLORS["reset"]}'
     )
-
-    # Add stream handler to display on stdout/stderr
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.DEBUG)
-
-    # Set the formatter
-    sh.setFormatter(formatter)
-
-    # Add handler to logger
-    logger.addHandler(sh)
-
-    return logger

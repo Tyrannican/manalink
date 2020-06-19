@@ -47,9 +47,7 @@ class CoreProtocol:
         self._node_lock = asyncio.Lock()
         self.logger = make_logger(self.name)
 
-        self.logger.info(
-            f'Initialising {self.name} for {self.host_address}'
-        )
+        self.logger.info(f'Initialising {self.name} for {self.host_address}')
 
     @property
     def name(self) -> str:
