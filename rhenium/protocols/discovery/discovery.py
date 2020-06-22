@@ -12,8 +12,8 @@ import asyncio
 from typing import List, Optional
 
 # Protocol imports
-from .protocol import CoreProtocol
-from ..prototools import (
+from ..protocol import CoreProtocol
+from ...prototools import (
     ProtoResult,
     ProtoPort,
     ProtoErrorType,
