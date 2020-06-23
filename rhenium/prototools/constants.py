@@ -7,5 +7,7 @@
 
 """
 
-# Hard-coded addresses of Discovery Nodes on the network
-DISCOVERY_NODES = ['130.209.221.226']
+# Core Protcol constants
+PULSE_TIMER = 10
+BROADCAST_TIMER = 10
+CONSTANT_DISCOVERY_TIMER = 10

@@ -11,6 +11,7 @@ import asyncio
 from typing import (
     Any, Dict, Optional, List, ByteString, Callable
 )
+from copy import copy
 
 # Prototool helpers
 from ..prototools import (
@@ -21,8 +22,11 @@ from ..prototools import (
     ProtoError,
     ProtoPort,
     address_in_use,
-    make_logger
+    make_logger,
+    colour_item
 )
+
+from ..prototools import constants as cst
 
 
 class CoreProtocol:
@@ -39,14 +43,28 @@ class CoreProtocol:
         buffer: int = 4096,
         protocol_port: ProtoPort = ProtoPort.UNUSED
     ):
+        # Current address
         self.host_address = '0.0.0.0'
+
+        # Port for this protocol to communicate over
         self.protocol_port = protocol_port.value
+
+        # List of known nodes
         self.nodes = nodes
+
+        # Copy of our initial nodes for continuous discovery
+        self.initial_nodes = copy(nodes)
+
+        # Default receive buffer
         self._buf = buffer
-        self._pulse_timer = 10
+
+        # Lock for updating the node list (Legacy?)
         self._node_lock = asyncio.Lock()
+
+        # Logger for the protocol
         self.logger = make_logger(self.name)
 
+        # Nice welcome message
         self.logger.info(f'Initialising {self.name} for {self.host_address}')
 
     @property
@@ -66,7 +84,7 @@ class CoreProtocol:
         # Address for this protocol is already running, clash with another
         # protocol or another service on the machine
         if address_in_use(self.host_address, self.protocol_port):
-            self.logger.warning(
+            self.logger.error(
                 f'Address {self.host_address}:{self.protocol_port} is already\
  in use. {self.name} may already be running on this machine.'
             )
@@ -76,7 +94,8 @@ class CoreProtocol:
         tasks = [
             self.node_listener(),
             self.broadcast(),
-            self.pulse_nodes()
+            self.pulse_nodes(),
+            self.discovery()
         ]
 
         # Execute loop
@@ -84,7 +103,7 @@ class CoreProtocol:
             *tasks
         )
 
-    async def broadcast(self, broadcast_timer: int = 10):
+    async def broadcast(self, broadcast_timer: int = cst.BROADCAST_TIMER):
         """Broadcast loop,
         should call the `broadcaster` in an infinite loop with extra additions
         if necessary
@@ -96,11 +115,16 @@ class CoreProtocol:
             NotImplementedError: Not implemented
         """
 
-        raise NotImplementedError(
-            'Method requires implementation in child protocols!'
+        self.logger.warning(
+            f'`broadcast()` method empty for {self.name}. Nothing to do!'
         )
 
-    async def broadcaster(self, callback: Callable, broadcast_timer: int = 10):
+    async def broadcaster(
+        self,
+        callback: Callable,
+        port: Optional[int] = None,
+        broadcast_timer: Optional[int] = cst.BROADCAST_TIMER
+    ):
         """Broadcaster which calls the callback function for each node and waits
         X seconds
 
@@ -110,11 +134,13 @@ class CoreProtocol:
                                             Defaults to 10.
         """
 
+        port = port if port is not None else self.protocol_port
+
         # Create a list of tasks calling the callback for each node
         tasks = [
             asyncio.create_task(
                 callback(
-                    NodeAddress(host=node, port=self.protocol_port)
+                    NodeAddress(host=node, port=port)
                 )
             )
             for node in self.nodes
@@ -123,6 +149,159 @@ class CoreProtocol:
         # Execute the tasks and wait
         await asyncio.gather(*tasks)
         await asyncio.sleep(broadcast_timer)
+
+    async def discovery(self):
+        """Performs discovery of new nodes on the network
+        """
+
+        # Generate tasks from discovery workflow
+        tasks = [
+            self._discovery_broadcast(),
+            self._discovery_server(),
+            self._constant_discovery()
+        ]
+
+        # Run all tasks
+        await asyncio.gather(
+            *tasks
+        )
+
+    async def _discovery_broadcast(self):
+        """Infinite loop of constantly ping nodes for node updates
+        """
+
+        # Run forever
+        while True:
+            # Run broadcaster with callback
+            await self.broadcaster(self._discovery_connection)
+
+            # Let user know how many nodes are found
+            self.logger.info(f'Looking for nodes\t\
+ {colour_item("Total", "green")}={len(self.nodes)}')
+
+    async def _discovery_server(self):
+        """Discovery server, handles incoming connections on the discovery
+        port
+        """
+
+        # Start server listening on discovery port
+        server = await asyncio.start_server(
+            self._discovery_handler,
+            host=self.host_address, port=ProtoPort.DISCOVERY.value
+        )
+
+        # Serve forever
+        await server.serve_forever()
+
+    async def _discovery_handler(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        """Handles incoming connections for discovery and sends back a response
+
+        Args:
+            reader (asyncio.StreamReader): Socket reader
+            writer (asyncio.StreamWriter): Socket writer
+        """
+
+        # Read incoming message (Message is meaningless)
+        _ = await reader.read(self._buf)
+
+        # Package up node list and send back to connected node
+        nodes = ProtoResult(results=[self.nodes])
+        resp = self.create_message(results=nodes)
+        writer.write(resp)
+        await writer.drain()
+
+        # Close the writer
+        writer.close()
+        await writer.wait_closed()
+
+    async def _discovery_connection(self, node: NodeAddress):
+        """Connects to a node to receive their list of known nodes
+
+        Args:
+            node (NodeAddress): Node to connect to
+        """
+
+        # Create a node address (Might already be a NodeAddress)
+        # Just make a new one with Discovery port set anyway
+        node = NodeAddress(host=node.host, port=ProtoPort.DISCOVERY.value)
+
+        # Contact the node for a response
+        response = await self.notify_node(node, function=None)
+
+        # Break down response
+        status, errors, results = (
+            response.status, response.errors, response.results
+        )
+
+        # Not OK, log errors and continue
+        if not status:
+            if errors.error_type != ProtoErrorType.CONNECTION:
+                self.logger.error(errors.message)
+            return
+
+        # Get the node list
+        nodes = results[0]
+
+        # Update our list of nodes
+        for node in nodes:
+            await self._update_nodes(node)
+
+    async def _constant_discovery(
+        self, search_time: Optional[int] = cst.CONSTANT_DISCOVERY_TIMER
+    ):
+        """Continually search for the initial nodes if no nodes are left in the
+        list
+
+        Args:
+            search_time (Optional[int], optional): How long between each check.
+                                                    Defaults to 10.
+        """
+
+        # Always run
+        while True:
+            # Already have nodes, just continue
+            if len(self.nodes) > 0:
+                await asyncio.sleep(search_time)
+                continue
+
+            # Update our node list with our initial nodes again
+            for node in self.initial_nodes:
+                await self._update_nodes(node)
+
+            # Pause between next check
+            await asyncio.sleep(search_time)
+
+    async def pulse_nodes(self):
+        """Pulses each node, determining if it is still present
+        If not, remove from peer list
+        """
+
+        # Loop forever
+        while True:
+            # If the node response to ping, keep in list
+            for node in self.nodes:
+                if not await self.ping(node):
+                    async with self._node_lock:
+                        self.nodes.remove(node)
+                    break
+
+            # Wait between broadcasts
+            await asyncio.sleep(cst.PULSE_TIMER)
+
+    async def _update_nodes(self, host: str):
+        """Update the node list with a new connection if not present
+
+        Args:
+            host (str): Incoming node connection
+        """
+
+        # Not is not present and isn't the server
+        if await self.ping(host, port=ProtoPort.DISCOVERY.value):
+            if host not in self.nodes and host != self.host_address:
+                async with self._node_lock:
+                    self.nodes.append(host)
 
     async def notify_node(
         self,
@@ -152,13 +331,6 @@ class CoreProtocol:
         response = await self.open_node_connection(
             node_address=node_address, request=request
         )
-
-        # Debug logger
-        self.logger.debug(f'Response Protocol: {response.protocol}')
-        self.logger.debug(f'Response Timestamp: {response.timestamp}')
-        self.logger.debug(f'Response Function: {response.function}')
-        self.logger.debug(f'Response Args: {response.args}')
-        self.logger.debug(f'Response results: {response.results}')
 
         return response.results
 
@@ -219,27 +391,7 @@ class CoreProtocol:
                 results=result
             )
 
-    async def pulse_nodes(self):
-        """Pulses each node, determining if it is still present
-        If not, remove from peer list
-        """
-
-        # Loop forever
-        while True:
-            # If the node response to ping, keep in list
-            for node in self.nodes:
-                if (
-                    not await self.ping(node)
-                    and self.protocol_port == ProtoPort.DISCOVERY.value
-                ):
-                    async with self._node_lock:
-                        self.nodes.remove(node)
-                    break
-
-            # Wait between broadcasts
-            await asyncio.sleep(self._pulse_timer)
-
-    async def ping(self, node: str) -> bool:
+    async def ping(self, node: str, port: Optional[int] = None) -> bool:
         """Ping an address and check for a response
 
         Args:
@@ -249,10 +401,12 @@ class CoreProtocol:
             bool: If a connection is established
         """
 
+        port = port if port is not None else self.protocol_port
+
         try:
             # Attempt connection
             await asyncio.open_connection(
-                host=node, port=self.protocol_port
+                host=node, port=port
             )
 
             # Connection successful
@@ -267,6 +421,14 @@ class CoreProtocol:
         Listens for nodes and processes their Protocol requests
         """
 
+        # Don't start server if protocol port is unused
+        if self.protocol_port == ProtoPort.UNUSED.value:
+            self.logger.warning(
+                f'Protocol Port for {self.name} is set to UNUSED, not starting\
+ server!')
+            return
+
+        # Start server
         server = await asyncio.start_server(
             self._listener_handler,
             host=self.host_address, port=self.protocol_port
@@ -302,18 +464,6 @@ class CoreProtocol:
         # Close writer
         writer.close()
         await writer.wait_closed()
-
-    async def _update_nodes(self, host: str):
-        """Update the node list with a new connection if not present
-
-        Args:
-            host (str): Incoming node connection
-        """
-
-        # Not is not present and isn't the server
-        if host not in self.nodes and host != self.host_address:
-            async with self._node_lock:
-                self.nodes.append(host)
 
     def create_message(
         self,

@@ -84,12 +84,15 @@ class ProtoFormatter(logging.Formatter):
         elif levelno == logging.WARN:
             level = colour_item(level, color='yellow', bold=True)
             msg = colour_item(msg, color='yellow')
+        elif levelno == logging.ERROR:
+            level = colour_item(level, color='red', bold=True)
+            msg = colour_item(msg, color='red', bold=True)
         elif levelno == logging.CRITICAL:
             level = colour_item(level, color='red', bold=True)
             msg = colour_item(msg, color='red')
 
         # Log the current time
-        timestamp = time.strftime('%H:%M:%S %d-%m-%Y')
+        timestamp = time.strftime('%d-%m-%Y|%H:%M:%S')
 
         # Colour the logger name
         name = colour_item(record.name, color='magenta')

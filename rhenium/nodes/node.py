@@ -14,7 +14,7 @@ import asyncio
 from typing import List
 
 # Protocol imports
-from ..protocols import DiscoveryProtocol, CoreProtocol
+from ..protocols import CoreProtocol
 
 class CoreNode:
     """Class representing a Core Node
@@ -30,11 +30,11 @@ class CoreNode:
         # List to hold all protocols for the node
         self.protocols = []
 
+        # List of nodes
+        self.nodes = nodes
+
         # Current async loop
         self._async_loop = None
-
-        # Automatically register the Discovery Protocol
-        self.register_protocols(DiscoveryProtocol(nodes=nodes))
 
     def _add_signal_handler(self):
         """Adds common signal interrupts to the currently set running loop
@@ -72,16 +72,18 @@ class CoreNode:
         # Stop the current running loop
         self._async_loop.stop()
 
-    def register_protocols(self, *protocols: CoreProtocol):
+    def register_protocol(self, protocol: CoreProtocol):
         """Register any protocols
 
         Args:
             protocols (CoreProtocol): Protocol to register
         """
 
+        # Set nodes for the protocol
+        proto = protocol(nodes=self.nodes)
+
         # For every Protocol given, add to list
-        for protocol in protocols:
-            self.protocols.append(protocol)
+        self.protocols.append(proto)
 
     async def run(self):
         """Run loop for the node

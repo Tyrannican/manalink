@@ -104,7 +104,7 @@ class NodeAddress:
             str: NodeAddress info as a string
         """
 
-        return f'NodeAddress(host={self.host}, port={self.port}'
+        return f'NodeAddress(host={self.host}, port={self.port})'
 
     def set_port(self, new_port: Union[ProtoPort, int]):
         """Set the port to a new value
