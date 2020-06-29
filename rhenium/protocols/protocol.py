@@ -9,7 +9,7 @@
 # System imports
 import asyncio
 from typing import (
-    Any, Dict, Optional, List, ByteString, Callable
+    Any, Dict, Optional, List, ByteString, Callable, Union
 )
 from copy import copy
 
@@ -41,13 +41,16 @@ class CoreProtocol:
         self,
         nodes: List[str] = [],
         buffer: int = 4096,
-        protocol_port: ProtoPort = ProtoPort.UNUSED
+        protocol_port: Union[ProtoPort, int] = ProtoPort.UNUSED
     ):
         # Current address
         self.host_address = '0.0.0.0'
 
         # Port for this protocol to communicate over
-        self.protocol_port = protocol_port.value
+        self.protocol_port = (
+            protocol_port.value if isinstance(protocol_port, ProtoPort)
+            else protocol_port
+        )
 
         # List of known nodes
         self.nodes = nodes
