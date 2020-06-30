@@ -80,7 +80,7 @@ class CoreProtocol:
 
         return self.__class__.__name__
 
-    async def run(self):
+    async def run(self, *exec_funcs):
         """Basic run loop, can be overridden
         """
 
@@ -100,6 +100,9 @@ class CoreProtocol:
             self.pulse_nodes(),
             self.discovery()
         ]
+
+        # Add new run functions to the running tasks
+        tasks.extend([ex() for ex in exec_funcs])
 
         # Execute loop
         await asyncio.gather(
