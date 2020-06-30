@@ -14,7 +14,7 @@ from typing import (
 from copy import copy
 
 # Prototool helpers
-from ..prototools import (
+from .prototools import (
     ProtoErrorType,
     ProtoMessage,
     NodeAddress,
@@ -22,15 +22,15 @@ from ..prototools import (
     ProtoError,
     ProtoPort,
     address_in_use,
-    make_logger,
-    colour_item
 )
 
-from ..prototools import constants as cst
+from ...tools import constants as cst
+from ...tools import make_logger, colour_item
 
 
-class CoreProtocol:
-    """Core of the Protocol on which each subsequent protocol will build upon
+class MRPCProtocol:
+    """Core of the Manalink RPC Protocol on which each subsequent protocol
+    will build upon.
 
     Args:
         node_address (NodeAddress): Address of the Protocol's node listener

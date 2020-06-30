@@ -27,7 +27,6 @@ class ProtoPort(Enum):
     """
     UNUSED = 64000  # Defualt -- Unused
     DISCOVERY = 9000  # Discovery Protocol
-    TIME = 9001  # Time Protocol
 
 
 class ProtoErrorType(Enum):
