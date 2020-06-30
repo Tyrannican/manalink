@@ -413,8 +413,8 @@ class MRPCProtocol:
         # Don't start server if protocol port is unused
         if self.protocol_port == ProtoPort.UNUSED.value:
             self.logger.warning(
-                f'Protocol Port for {self.name} is set to UNUSED, not starting\
- server!')
+                f'Protocol Port for {self.name} is set to UNUSED, running only\
+ as a discovery node.')
             return
 
         # Start server
