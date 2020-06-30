@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='rhenium',
-    version='0.0.1',
+    version='0.1.0',
     author='Graham Keenan',
     author_email='graham.keenan@outlook.com',
     description='Expandable P2P communication protocols',
