@@ -95,10 +95,9 @@ class MRPCProtocol:
 
         # Keep track of all Tasks to be executed
         tasks = [
-            self.node_listener(),
-            self.broadcast(),
-            self.pulse_nodes(),
-            self.discovery()
+            self.node_listener(),  # Listens for incoming connections
+            self.pulse_nodes(),  # Pulses known nodes for alive status
+            self.discovery()  # Attempt to find new nodes
         ]
 
         # Add new run functions to the running tasks
@@ -107,22 +106,6 @@ class MRPCProtocol:
         # Execute loop
         await asyncio.gather(
             *tasks
-        )
-
-    async def broadcast(self, broadcast_timer: int = cst.BROADCAST_TIMER):
-        """Broadcast loop,
-        should call the `broadcaster` in an infinite loop with extra additions
-        if necessary
-
-        Args:
-            broadcast_timer (int): Time between node broadcasts
-
-        Raises:
-            NotImplementedError: Not implemented
-        """
-
-        self.logger.warning(
-            f'`broadcast()` method empty for {self.name}. Nothing to do!'
         )
 
     async def broadcaster(
