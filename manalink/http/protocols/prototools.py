@@ -11,14 +11,12 @@
 import json
 import asyncio
 from enum import Enum
-from typing import Optional, ByteString, Any, Dict, Union
+import requests
+from typing import Optional, ByteString, Any, Dict, Union, List
 
 # Third-party imports
 from jsonrpc.exceptions import JSONRPCInvalidRequestException
 from jsonrpc.jsonrpc2 import JSONRPC20Response, JSONRPC20Request, JSONRPCError
-
-# Default RPC ID number
-RPC_DEFAULT_ID = 200
 
 class ManaRPCError(Enum):
     """Enum to represent the types of JSON RPC 2.0 errors
@@ -166,3 +164,54 @@ def generate_rpc_error(
 
     error = JSONRPCError(code=code, message=message, data=data)
     return json.loads(error.json)
+
+def parse_response(response: requests.Response) -> JSONRPC20Response:
+    """Load the response from returned JSON text
+
+    Args:
+        response (requests.Response): Response object
+
+    Returns:
+        JSONRPC20Response: RPC Response information
+    """
+
+    return JSONRPC20Response.from_json(response.text)
+
+def notify_node(
+    node: Address, function: str, args: List[Any] = []
+) -> JSONRPC20Response:
+    """Creates a JSON RPC request to call the supplied method on the server
+    in order to obtain the results.
+
+    Args:
+        node (Address): Server address
+
+        function (str): Function/method to call
+
+        args (List[Any], optional): Any args for the function/method call.
+        Defaults to [].
+
+    Returns:
+        JSONRPC20Response: Response from the server
+    """
+
+    try:
+        # Build the request and send to the server
+        request = JSONRPC20Request(method=function, params=args)
+        response = requests.post(
+            f'http://{node.host}:{node.port}/',
+            json=request.json
+        )
+
+        # Return the parsed response
+        return parse_response(response)
+
+    # Cannot connect to the node
+    except requests.ConnectionError:
+        # Return an error Response
+        return JSONRPC20Response(
+            error=generate_rpc_error(
+                code=ManaRPCError.CONNECTION.value,
+                message=f'No connection to {node.host}:{node.port}'
+            )
+        )

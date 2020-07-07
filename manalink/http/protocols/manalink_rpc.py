@@ -10,11 +10,9 @@
 
 # System imports
 import asyncio
-import requests
 from copy import copy
-from logging import Logger
 from typing import (
-    List, Dict, Optional, Any, Union, ByteString, Callable
+    List, Optional, Union, ByteString, Callable
 )
 
 # Project imports
@@ -26,217 +24,14 @@ from .prototools import (
     extract_rpc_call,
     generate_rpc_error,
     ping_node,
-    RPC_DEFAULT_ID
+    notify_node
 )
 
+import tools.constants as cst
 from ...tools import make_logger, colour_item
 
 # Third-party imports
-from jsonrpc.jsonrpc2 import JSONRPC20Request, JSONRPC20Response
-
-class ManaLinkRPCDiscovery:
-    """Discovery Protocol responsible for tracking known nodes.
-
-    Args:
-        host (str): Address of the host
-
-        port (Optional[Union[ManaRPCPort, int]]): Port to listen on.
-        Defaults to ManaRPCPort.DISCOVERY
-
-        nodes (Optional[List[str]]): List of nodes to make initial contact with
-        Defaults to [].
-
-    """
-
-    def __init__(
-        self,
-        host: str,
-        port: Optional[Union[ManaRPCPort, int]] = ManaRPCPort.DISCOVERY,
-        nodes: Optional[List[str]] = [],
-        logger: Optional[Logger] = None,
-        _read_buffer: Optional[int] = 4096
-    ):
-        # Host address
-        self.host = host
-
-        # Port number
-        self.port = port.value
-
-        # Initial contact nodes
-        self.nodes = nodes
-
-        # Primitive lock for updating nodes (Legacy?)
-        self._node_lock = asyncio.Lock()
-
-        # Copy of the initial nodes for continuos discovery
-        self.initial_nodes = copy(nodes)
-
-        # Logger
-        self.logger = logger
-
-        # Read buffer
-        self.__buf = _read_buffer
-
-    def register_methods(self, methods: Dict[str, Callable]):
-        """Registers external methods to this class
-
-        Args:
-            methods (Dict[str, Callable]): Key-value map of method name and
-            method callable.
-
-        """
-
-        # Iterate through each method in the dict
-        for method_name, method_call in methods.items():
-            # Register method to this class
-            setattr(self, method_name, method_call)
-
-    async def run(self):
-        """Main execution loop for the protocol
-        """
-
-        # Get all tasks to execute
-        tasks = [
-            self._discovery_server(),
-            self._discovery_broadcast(),
-            self._constant_discovery(),
-            self._keepalive(),
-        ]
-
-        # Run them and await finish
-        await asyncio.gather(*tasks)
-
-    async def _discovery_server(self):
-        """Launches the discovery server on the discovery port and listens
-        for incoming connections.
-        """
-
-        server = await asyncio.start_server(
-            self._discovery_handler,
-            host=self.host, port=ManaRPCPort.DISCOVERY.value
-        )
-
-        await server.serve_forever()
-
-    async def _discovery_handler(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ):
-        """Callback function for the server.
-        On incoming connection, server calls this method to parse the request,
-        build the response, and send back the result.
-
-        Args:
-            reader (asyncio.StreamReader): Buffer Reader
-            writer (asyncio.StreamWriter): Buffer Writer
-        """
-
-        # Read in request - Nothing for discovery
-        _ = await reader.read(self.__buf)
-        sock = writer.get_extra_info('socket')
-        self.host = sock.getsockname()[0]
-
-        # Build response which is the current list of nodes for this protocol
-        response = JSONRPC20Response(result=[self.nodes], id=RPC_DEFAULT_ID)
-
-        # Convert resposne to HTTP response
-        response = http_response_builder(
-            host=self.host, port=ManaRPCPort.DISCOVERY.value, data=response
-        )
-
-        # Send response and close connection
-        writer.write(response.encode())
-        writer.close()
-        await writer.wait_closed()
-
-    async def _discovery_broadcast(self):
-        """Continuously ask other nodes for their list of nodes every X seconds.
-        """
-
-        # Loop forever calling the connection method
-        while True:
-            await self.broadcaster(self._discovery_connection, port=self.port)
-
-            # Log total number of nodes
-            self.logger.info(f'Looking for nodes\t\
- {colour_item("Total", "green")}={len(self.nodes)}')
-
-    async def _discovery_connection(self, node: Address):
-        """Connect to the address and request their node list.
-
-        Args:
-            node (Address): Node to connect to
-        """
-
-        # Send request and await result
-        response = await self.notify_node(node, function='')
-
-        if response.error:
-            self.logger.error(response.error['message'])
-            return
-
-        result = response.result
-
-        # Extract nodes and update list
-        nodes = result[0]
-        for node in nodes:
-            await self._update_nodes(node)
-
-    async def _constant_discovery(self, search_time: Optional[int] = 10):
-        """
-        Continuously search for known nodes when the current node list is empty.
-        The intial nodes on startup should be always-connected meaning that if
-        the node lost it's current node list, it will always have somewher to
-        ping back to.
-
-        Args:
-            search_time (Optional[int], optional): Time between beacons.
-            Defaults to 10.
-        """
-
-        # Loop forever
-        while True:
-            # We have nodes, jsut pause and loop
-            if len(self.nodes) > 0:
-                await asyncio.sleep(search_time)
-                continue
-
-            # No nodes, set out initial nodes to the current nodes
-            for node in self.initial_nodes:
-                await self._update_nodes(node)
-
-            # Pause for a while before next beacon
-            await asyncio.sleep(search_time)
-
-    async def _keepalive(self):
-        """Continuously ping known nodes and remove them if there is no response
-        """
-
-        # Loop forever
-        while True:
-            # Iterate through nodes
-            for node in self.nodes:
-                # No response, remove from list
-                if not await ping_node(node, port=ManaRPCPort.DISCOVERY.value):
-                    async with self._node_lock:
-                        self.nodes.remove(node)
-                    break
-
-            # Time between beacons
-            await asyncio.sleep(10)
-
-    async def _update_nodes(self, node: str):
-        """Update the current nodes with the given node
-
-        Args:
-            node (str): Node address
-        """
-
-        # Node is alive, check address
-        if await ping_node(node, port=ManaRPCPort.DISCOVERY.value):
-            # Address is not the current host,update list
-            if node not in self.nodes and node != self.host:
-                async with self._node_lock:
-                    self.nodes.append(node)
+from jsonrpc.jsonrpc2 import JSONRPC20Response
 
 class ManaLinkRPC:
     """HTTP communication protocol for ManaLink using JSON RPC 2.0 with built-in
@@ -249,7 +44,7 @@ class ManaLinkRPC:
         host (str): Host address
         port (Union[ManaRPCPort, int]): Communication port for the protocol
         nodes (Optional[List[str]]): List of initial nodes
-        _read_buffer (Optional[str]): Internal buffer size
+        _read_buffer (Optional[str]): Internal buffer size. Defaults to 4096.
     """
 
     def __init__(
@@ -257,7 +52,7 @@ class ManaLinkRPC:
         host: str,
         port: Union[ManaRPCPort, int],
         nodes: Optional[List[str]] = [],
-        _read_buffer: Optional[int] = 4096
+        _read_buffer: Optional[int] = cst.DEFAULT_BUFFER
     ):
         # Current address
         self.host = host
@@ -280,12 +75,6 @@ class ManaLinkRPC:
         self.discovery = ManaLinkRPCDiscovery(
             self.host, nodes=self.nodes, logger=self.logger
         )
-
-        # Register the broadcaster and notify methods for it
-        self.discovery.register_methods({
-            'notify_node': self.notify_node,
-            'broadcaster': self.broadcaster
-        })
 
         self.logger.info(
             f'Launching {self.name} on {self.host}:{self.protocol_port}'
@@ -396,45 +185,6 @@ class ManaLinkRPC:
         writer.close()
         await writer.wait_closed()
 
-    async def notify_node(
-        self, node: Address, function: str, args: List[Any] = []
-    ) -> JSONRPC20Response:
-        """Creates a JSON RPC request to call the supplied method on the server
-        in order to obtain the results.
-
-        Args:
-            node (Address): Server address
-
-            function (str): Function/method to call
-
-            args (List[Any], optional): Any args for the function/method call.
-            Defaults to [].
-
-        Returns:
-            JSONRPC20Response: Response from the server
-        """
-
-        try:
-            # Build the request and send to the server
-            request = JSONRPC20Request(method=function, params=args)
-            response = requests.post(
-                f'http://{node.host}:{node.port}/',
-                json=request.json
-            )
-
-            # Return the parsed response
-            return self.parse_response(response)
-
-        # Cannot connect to the node
-        except requests.ConnectionError:
-            # Return an error Response
-            return JSONRPC20Response(
-                error=generate_rpc_error(
-                    code=ManaRPCError.CONNECTION.value,
-                    message=f'No connection to {node.host}:{node.port}'
-                )
-            )
-
     def parse_request(self, request: ByteString) -> JSONRPC20Response:
         """Parses the incoming request, calls the requested function/method
         and returns the result/error depending on circumstance.
@@ -473,14 +223,235 @@ class ManaLinkRPC:
             id=rpc.id
         )
 
-    def parse_response(self, response: requests.Response) -> JSONRPC20Response:
-        """Load the response from returned JSON text
+class ManaLinkRPCDiscovery:
+    """Discovery Protocol responsible for tracking known nodes.
 
-        Args:
-            response (requests.Response): Response object
+    Args:
+        host (str): Address of the host
 
-        Returns:
-            JSONRPC20Response: RPC Response information
+        nodes (Optional[List[str]]): List of nodes to make initial contact with
+        Defaults to [].
+
+    """
+
+    def __init__(
+        self,
+        host: str,
+        nodes: Optional[List[str]] = []
+    ):
+        # Host address
+        self.host = host
+
+        # Port number
+        self.port = ManaRPCPort.DISCOVERY.value
+
+        # Initial contact nodes
+        self.nodes = nodes
+
+        # Copy of the initial nodes for continuous discovery
+        self.initial_nodes = copy(nodes)
+
+        # Logger
+        self.logger = make_logger(self.__class__.__name__, debug=True)
+
+        # Read buffer
+        self.__buf = cst.DEFAULT_BUFFER
+
+        # Node lock
+        self._node_lock = asyncio.Lock()
+
+    async def run(self):
+        """Main run loop for discovery
         """
 
-        return JSONRPC20Response.from_json(response.text)
+        tasks = [
+            self._discovery_server(),  # Main Discovery server
+            self._discovery_broadcast(),  # Beacon sender to other nodes
+            self._continuous_discovery(),  # Continuously search for nodes
+            self._keepalive()  # Check node alive status
+        ]
+
+        await asyncio.gather(*tasks)
+
+    async def _discovery_server(self):
+        """Server to process incoming node connections
+        """
+
+        server = await asyncio.start_server(
+            self._discovery_handler,
+            host=self.host, port=self.port
+        )
+
+        await server.serve_forever()
+
+    async def _discovery_handler(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        """Called on every incoming connection.
+        Gives the connecting node the current list of known nodes to the server
+
+        Args:
+            reader (asyncio.StreamReader): Buffered Reader
+            writer (asyncio.StreamWriter): Buffered Writer
+        """
+
+        # Get information from the socket
+        sock = writer.get_extra_info('socket')
+
+        # Get own IP address as may not be known from 0.0.0.0
+        self.host = sock.getsockname()[0]
+
+        # Get IP of connecting node
+        node = sock.getpeername()[0]
+
+        # Ditch request, empty for Discovery, so long as it resolves
+        _ = await reader.read(self.__buf)
+
+        # Add node to known node list
+        await self._update_nodes(node)
+        self.logger.debug(f'Connection from: {node}')
+
+        # Create JSON RPC 2.0 response, with nodes as result
+        rpc_response = JSONRPC20Response(
+            result=[self.nodes],
+            id=cst.RPC_DEFAULT_ID
+        )
+
+        # Convert to HTTP response
+        response = http_response_builder(
+            host=self.host, port=self.port, data=rpc_response
+        )
+
+        # Send to node and close connection
+        self.logger.debug(f'Sending response to: {node}')
+        writer.write(response.encode())
+        writer.close()
+        await writer.wait_closed()
+
+    async def _discovery_broadcast(self, beacon_timer: int = cst.BEACON_TIMER):
+        """Broadcasts a request for nodes to all known nodes.
+
+        Args:
+            beacon_timer (int, optional): Time between broadcasts.
+               Defaults to cst.BEACON_TIMER.
+
+        """
+
+        # Loop forever
+        while True:
+            # Create beacon request for each node
+            tasks = [
+                self._discovery_beacon(Address(host=node, port=self.port))
+                for node in self.nodes
+            ]
+
+            self.logger.info(
+                f'Looking for nodes:\t{colour_item("Total", "green")}\
+={len(self.nodes)}')
+            self.logger.debug(f'Active nodes: {self.nodes}')
+
+            # Call the tasks and wait
+            await asyncio.gather(*tasks)
+            await asyncio.sleep(beacon_timer)
+
+    async def _discovery_beacon(self, node: Address):
+        """Sends a beacon to a node requesting their node list
+
+        Args:
+            node (Address): Node to connect to
+        """
+
+        # Send beacon to node and parse response
+        response = notify_node(node, function='')
+        results, errors = response.result, response.error
+
+        # Errors were encountered, log and return
+        if errors:
+            self.logger.error(f'Error encountered: {response.error}')
+            return
+
+        # Extract the node list and update
+        nodes = results[0]
+        for node in nodes:
+            await self._update_nodes(node)
+
+    async def _continuous_discovery(
+        self, beacon_timer: int = cst.CONSTANT_DISCOVERY_BEACON
+    ):
+        """Continually search for previous known nodes if node list is empty.
+
+        Args:
+            beacon_timer (int, optional): Time between checks.
+            Defaults to cst.CONSTANT_DISCOVERY_BEACON.
+
+        """
+
+        # Loop forever
+        while True:
+            # Nodes are present, just wait for next iteration
+            if len(self.nodes) > 0:
+                await asyncio.sleep(beacon_timer)
+                continue
+
+            # No nodes, update node list with previous known nodes
+            for node in self.initial_nodes:
+                await self._update_nodes(node)
+
+            # Still no known nodes, current node may be dead until
+            # new connection made
+            if len(self.nodes) == 0:
+                self.logger.warning('No nodes can be found, dead node!')
+
+            # Wait for next iteration
+            await asyncio.sleep(beacon_timer)
+
+    async def _keepalive(self, beacon_timer: int = cst.KEEPALIVE_TIMER):
+        """Constantly check if known nodes are still alive.
+        Remove dead nodes.
+
+        Args:
+            beacon_timer (int, optional): Time between beacons.
+            Defaults to cst.KEEPALIVE_TIMER.
+
+        """
+
+        # Loop forever
+        while True:
+            # Self is in known nodes, remove it
+            if self.host in self.nodes:
+                async with self._node_lock:
+                    self.nodes.remove(self.host)
+
+            # Iterate through known nodes
+            for node in self.nodes:
+                # Node is alive, skip to next node
+                if await ping_node(node, port=self.port):
+                    continue
+
+                # Node is dead, remove it
+                self.logger.debug(f'Removing inactive node: {node}')
+                async with self._node_lock:
+                    self.nodes.remove(node)
+
+            # Wait for next iteration
+            await asyncio.sleep(beacon_timer)
+
+    async def _update_nodes(self, node: str):
+        """Updates the node list with a new node
+
+        Args:
+            node (str): Node to update
+        """
+
+        # Node is self, just return
+        if node == self.host:
+            return
+
+        # Node is not in known node list AND is alive, add it
+        if node not in self.nodes and await ping_node(node, port=self.port):
+            self.logger.debug(f'Registering new node: {node}')
+            async with self._node_lock:
+                self.nodes.append(node)
+
+                # Make the list unique to protect against duplicates
+                self.nodes = list(set(self.nodes))

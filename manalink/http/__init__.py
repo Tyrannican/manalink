@@ -1,2 +1,2 @@
 # STUB
-from .protocols.manalink_rpc import ManaLinkRPC
+from .protocols.manalink_rpc import ManaLinkRPC, ManaLinkRPCDiscovery
