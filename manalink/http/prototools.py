@@ -1,5 +1,5 @@
 """
-.. module:: http.protocols.prototools
+.. module:: http.prototools
     :platforms: Unix
     :synopsis: Collection of helper tools for use within protocols
 

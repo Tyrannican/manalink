@@ -1,5 +1,5 @@
 """
-.. module:: http.protocols.manalink_rpc
+.. module:: http.rpc
     :platforms: Unix
     :synopsis: Core of the HTTP protocol using JSON RPC 2.0 as communication
                 standard
@@ -27,8 +27,8 @@ from .prototools import (
     notify_node
 )
 
-import tools.constants as cst
-from ...tools import make_logger, colour_item
+from ..tools import constants as cst
+from ..tools import make_logger, colour_item
 
 # Third-party imports
 from jsonrpc.jsonrpc2 import JSONRPC20Response
