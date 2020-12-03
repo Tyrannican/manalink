@@ -28,7 +28,7 @@ from .prototools import (
 )
 
 from ..tools import constants as cst
-from ..tools import make_logger, colour_item
+from ..tools import make_logger, get_logger, colour_item
 
 # Third-party imports
 from jsonrpc.jsonrpc2 import JSONRPC20Response
@@ -73,7 +73,7 @@ class ManaLinkRPC:
 
         # Discovery protocol
         self.discovery = ManaLinkRPCDiscovery(
-            self.host, nodes=self.nodes, logger=self.logger
+            self.host, nodes=self.nodes, logger=get_logger(self.name)
         )
 
         self.logger.info(
@@ -237,7 +237,8 @@ class ManaLinkRPCDiscovery:
     def __init__(
         self,
         host: str,
-        nodes: Optional[List[str]] = []
+        nodes: Optional[List[str]] = [],
+        logger: Optional = None
     ):
         # Host address
         self.host = host
@@ -252,7 +253,7 @@ class ManaLinkRPCDiscovery:
         self.initial_nodes = copy(nodes)
 
         # Logger
-        self.logger = make_logger(self.__class__.__name__, debug=True)
+        self.logger = logger
 
         # Read buffer
         self.__buf = cst.DEFAULT_BUFFER
@@ -376,7 +377,7 @@ class ManaLinkRPCDiscovery:
             await self._update_nodes(node)
 
     async def _continuous_discovery(
-        self, beacon_timer: int = cst.CONSTANT_DISCOVERY_BEACON
+        self, beacon_timer: int = cst.CONSTANT_DISCOVERY_BEACON_TIMER
     ):
         """Continually search for previous known nodes if node list is empty.
 

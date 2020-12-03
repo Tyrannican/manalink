@@ -14,6 +14,18 @@ from typing import Optional
 
 from .general import colour_item
 
+def get_logger(name: str) -> logging.Logger:
+    """Gets the logger with the specified name
+
+    Args:
+        name (str): Name of the logger
+
+    Returns:
+        logging.Logger: Logger
+    """
+
+    return logging.getLogger(name)
+
 def make_logger(
     name: str, filename: Optional[str] = '', debug: Optional[bool] = False
 ) -> logging.Logger:
