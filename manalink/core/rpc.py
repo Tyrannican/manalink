@@ -112,6 +112,7 @@ class ManaGem:
     async def run(self):
         """Main run loop.
         """
+
         pass
 
     async def server(self):
@@ -183,6 +184,7 @@ class ManaGem:
 
         # Extract method name and parameters
         method, params = rpc.method, rpc.params
+        self.logger.debug(f"Received RPC Method: {method} Params: {params}")
 
         # Method not supported, return error
         if not hasattr(self, method):
@@ -199,6 +201,7 @@ class ManaGem:
         # Call the method and wait on the result
         method_call = getattr(self, method)
         result = await method_call(*params)
+        self.logger.debug(f"Processed request: {method}. Result: {result}")
 
         # Return results
         return create_json_rpc_response(rpc.id, result=result)
@@ -256,6 +259,7 @@ class ManaGemFinder:
         ]
 
         # Execute all tasks
+        self.logger.info("Initialised ManaGemFinder protocol!")
         await asyncio.gather(*tasks)
 
     async def _server(self):
@@ -326,6 +330,9 @@ class ManaGemFinder:
                 for gem in self.gems
             ]
 
+            self.logger.info(f"Total ManaGems: {len(self.gems)}")
+            self.logger.debug(f"Known ManaGems: {self.gems}")
+
             # Execute and wait
             await asyncio.gather(*tasks)
             await asyncio.sleep(timer)
@@ -374,9 +381,13 @@ class ManaGemFinder:
             for gem in self.seed_gems:
                 await self._update_gems(gem)
 
+            self.logger.warning(
+                "No ManaGems can be found, falling back to initial gems."
+            )
+
             # Still no nodes, raise a warning
             if len(self.gems) == 0:
-                self.logger.warning("Cannot find active gems, dead node!")
+                self.logger.warning("Cannot find active ManaGems, drained gem!")
 
             # Wait for next iteration
             await asyncio.sleep(timer)
@@ -406,6 +417,7 @@ class ManaGemFinder:
 
                 # Node is dead, remove it
                 async with self._gem_lock:
+                    self.logger.debug(f"Removing ManaGem: {gem}")
                     self.gems.remove(gem)
 
             # Wait for next iteration
@@ -425,6 +437,7 @@ class ManaGemFinder:
         # If node isn't in the list and is alive, add it
         if gem not in self.gems and await ping(gem, port=self.address.port):
             async with self._gem_lock:
+                self.logger.debug(f"Registed new ManaGem: {gem}")
                 self.gems.append(gem)
                 self.gems = list(set(self.gems))
 
