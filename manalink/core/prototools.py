@@ -1,8 +1,19 @@
+"""
+.. module:: core.prototools
+    :synopsis: Helper functions for the Core ManaLink protocol
+    :platforms: Unix
+
+.. moduleauthor:: Graham Keenan 2020
+
+"""
+
+# System imports
 import json
 import asyncio
 from dataclasses import dataclass
 from typing import ByteString, Optional, Any, Dict, List
 
+# External imports
 from jsonrpc.jsonrpc2 import (
     JSONRPCError,
     JSONRPC20Request,
@@ -10,12 +21,17 @@ from jsonrpc.jsonrpc2 import (
     JSONRPCInvalidRequestException
 )
 
+# Debug flag
 LIB_DEBUG = True
+
+# Use local path inclusion whilst in debug mode
 if LIB_DEBUG:
     import sys
     sys.path.append("..")
 
     from manalink.tools import constants as cst
+
+# Use module structure in release mode
 else:
     from ..tools import constants as cst
 
@@ -154,6 +170,25 @@ async def send_rpc_request(
     method: Optional[str] = "", args: Optional[List[Any]] = [],
     buffer: int = cst.DEFAULT_BUFFER
 ) -> JSONRPC20Response:
+    """Sends a JSON RPC request to an address and returns the response.
+
+    Args:
+        host (str): Host address to connect to.
+
+        port (int): Host port to connect to.
+
+        method (Optional[str], optional): RPC method to invoke. Defaults to "".
+
+        args (Optional[List[Any]], optional): Arguments for the RPC method to
+        invoke. Defaults to [].
+
+        buffer (int, optional): Read/write buffer size.
+        Defaults to cst.DEFAULT_BUFFER.
+
+    Returns:
+        JSONRPC20Response: RPC Response from the address
+    """
+
     try:
         # Build request and open connection
         request = create_json_rpc_request(method, args)

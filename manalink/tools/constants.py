@@ -9,7 +9,7 @@
 
 # Protocol Ports
 DEFAULT_PORT = 4000
-DISCOVERY = 4050
+DISCOVERY_PORT = 4050
 
 # Core Protcol constants
 BEACON_TIMER = 10

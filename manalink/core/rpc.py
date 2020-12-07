@@ -1,13 +1,27 @@
+"""
+.. module:: core.rpc
+    :synopsis: Core Protocol for communicating with nodes using JSON RPC
+    :platforms: Unix
+
+.. moduleauthor:: Graham Keenan 2020
+
+"""
+
+# System imports
 import asyncio
 from copy import copy
 from typing import Optional, List, ByteString
 
+# External imports
 from jsonrpc.jsonrpc2 import (
     JSONRPC20Response
 )
 
+
+# Debug flag
 LIB_DEBUG = True
 
+# Do local path inclusion when using debug mode
 if LIB_DEBUG:
     import sys
     sys.path.append("..")
@@ -24,6 +38,8 @@ if LIB_DEBUG:
         extract_rpc_response,
         ping
     )
+
+# Use package structure in release mode
 else:
     from ..tools.logger import make_logger, get_logger
     from .prototools import (
@@ -52,8 +68,7 @@ class ManaGem:
 
         seed_nodes (Optional[List[str]]): Initial seed nodes to help find other
         nodes on the network.
-        Requiered, else the node will sit isolated.
-        Defaults to [].
+        Required, else the node will sit isolated. Defaults to [].
 
         debug_mode (Optional[bool]): Debug flag. Defaults to False.
     """
@@ -95,9 +110,15 @@ class ManaGem:
         return self.__class__.__name__
 
     async def run(self):
+        """Main run loop.
+        """
         pass
 
     async def server(self):
+        """Main server loop for receiving connections from other nodes.
+        Accepts incoming connections and passes them to the server handler.
+        """
+
         # Loop forever to accept incoming connections
         server = await asyncio.start_server(
             self._server_handler, self.address.host, self.address.port
@@ -108,6 +129,16 @@ class ManaGem:
     async def _server_handler(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
+        """Handler for the server loop. Extracts incoming requests, executes
+        them, and returns the result back to the sender node.
+
+        Args:
+            reader (asyncio.StreamReader): Stream reader object for
+            incoming node.
+
+            writer (asyncio.StreamWriter): Stream writer object for
+            incoming node.
+        """
 
         # Replaces the 0.0.0.0 with the host's actual IP
         sock = writer.get_extra_info("socket")
@@ -121,10 +152,22 @@ class ManaGem:
         writer.write(response.encode("utf-8"))
         await writer.drain()
 
+        # Close down writer
         writer.close()
         await writer.wait_closed()
 
     async def parse_request(self, request: ByteString) -> JSONRPC20Response:
+        """Parses requests from other nodes and executes their command with
+        supplied arguments, if supported.
+
+        Args:
+            request (ByteString): Incoming request from node.
+
+        Returns:
+            JSONRPC20Response: Response containing results or errors from
+            method RPC call.
+        """
+
         # Extract the RPC call from the incoming data
         rpc = extract_rpc_request(request)
 
@@ -151,6 +194,8 @@ class ManaGem:
                 )
             )
 
+        # TODO::Only allow accepted methods be called.
+
         # Call the method and wait on the result
         method_call = getattr(self, method)
         result = await method_call(*params)
@@ -159,15 +204,29 @@ class ManaGem:
         return create_json_rpc_response(rpc.id, result=result)
 
 class ManaGemFinder:
+    """Main discovery protocol for the core protocol above. Each protocol that
+    inherits from the core `ManaLink` protocol has this built into it. This
+    protocol will continuously listen for new incoming nodes on the network and
+    update itself and others with what nodes are currently connected.
+
+    Args:
+        host (str): Host address.
+
+        seed_gems (Optional[List[str]]): List of initial nodes to seed
+        initial discovery. Defautls to [].
+
+        logger (Optional[logging.Logger]): Logger for the system. Defaults
+        to None.
+    """
+
     def __init__(
         self,
         host: str,
-        port: Optional[int] = cst.DISCOVERY,
         seed_gems: Optional[List[str]] = [],
         logger=None
     ):
         # Host address
-        self.address = Address(host=host, port=port)
+        self.address = Address(host=host, port=cst.DISCOVERY_PORT)
 
         # Initial list of nodes
         self.gems = seed_gems
@@ -185,6 +244,10 @@ class ManaGemFinder:
         self._gem_lock = asyncio.Lock()
 
     async def run(self):
+        """Main execution loop for the finder protocol.
+        """
+
+        # Gather up tasks together for continuous discovery
         tasks = [
             self._server(),
             self._finder_broadcast(),
@@ -192,9 +255,14 @@ class ManaGemFinder:
             self._keepalive(),
         ]
 
+        # Execute all tasks
         await asyncio.gather(*tasks)
 
     async def _server(self):
+        """Main server loop. Accepts incoming connections and passes them to
+        the finder handler.
+        """
+
         server = await asyncio.start_server(
             self._finder_handler,
             self.address.host, self.address.port
@@ -205,6 +273,15 @@ class ManaGemFinder:
     async def _finder_handler(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
+        """Handler method for incoming connections. Adds connected node to the
+        list of known nodes and sends back the current list of known nodes back
+        to the sender.
+
+        Args:
+            reader (asyncio.StreamReader): Reader object for incoming connection
+            writer (asyncio.StreamWriter): Writer object for incoming connection
+        """
+
         # Get the socket information
         sock = writer.get_extra_info("socket")
         self.address.host = sock.getsockname()[0]
@@ -218,12 +295,13 @@ class ManaGemFinder:
         # Update the current list of nodes
         await self._update_gems(gem)
 
-        # Send back our current list of nodes
+        # Create response containing our current list of nodes
         response = create_json_rpc_response(
             cst.JSONRPC_DEFAULT_ID,
             result=[self.gems]
         )
 
+        # Send response to sender
         writer.write(response)
         await writer.drain()
 
@@ -232,6 +310,14 @@ class ManaGemFinder:
         await writer.wait_closed()
 
     async def _finder_broadcast(self, timer: int = cst.BEACON_TIMER):
+        """Executes a callback for each known node, asking for the latest list
+        of known nodes on the network.
+
+        Args:
+            timer (int, optional): Timer between broadcasts.
+            Defaults to cst.BEACON_TIMER.
+        """
+
         # Run this in the background
         while True:
             # Create a callback for each node we know of
@@ -245,6 +331,14 @@ class ManaGemFinder:
             await asyncio.sleep(timer)
 
     async def _gem_beacon(self, address: Address):
+        """Main callback method for the finder broadcasts. Sends an RPC request
+        to the given address and updates the current list of nodes with their
+        response.
+
+        Args:
+            address (Address): Address to ask for known nodes.
+        """
+
         # Send a request to a node and get the repsonse
         response = await send_rpc_request(address.host, address.port)
         result, errors = response.result, response.error
@@ -260,6 +354,15 @@ class ManaGemFinder:
             await self._update_gems(gem)
 
     async def _keepfinding(self, timer: int = cst.BEACON_TIMER):
+        """Backup method that runs in the background to act as fallback when
+        the list of known nodes is exhausted. Falls back to using the initial
+        list of nodes supplied in the hope that they are still alive.
+
+        Args:
+            timer (int, optional): Time between broadcasts.
+            Defaults to cst.BEACON_TIMER.
+        """
+
         # Always run in the background
         while True:
             # We already have a list of nodes, do nothgin
@@ -278,8 +381,17 @@ class ManaGemFinder:
             # Wait for next iteration
             await asyncio.sleep(timer)
 
-    async def _keepalive(self, timer: int = cst.BEACON_TIMER):
-        # Run int he background, pinging nodes to see if they are alive
+    async def _keepalive(self, timer: int = cst.KEEPALIVE_TIMER):
+        """Continuously checks if each known node in the network is alive.
+        Sends a ping message and if no response is given, they are removed
+        from the list of known nodes.
+
+        Args:
+            timer (int, optional): Time between broadcasts.
+            Defaults to cst.BEACON_TIMER.
+        """
+
+        # Run in the background, pinging nodes to see if they are alive
         while True:
             # Remove the host node form the list, only care about others
             if self.address.host in self.gems:
@@ -300,6 +412,12 @@ class ManaGemFinder:
             await asyncio.sleep(timer)
 
     async def _update_gems(self, gem: str):
+        """Updates the list of known nodes with a new node
+
+        Args:
+            gem (str): New node to add to list
+        """
+
         # Don't add host node to list of nodes
         if gem == self.address.host:
             return
