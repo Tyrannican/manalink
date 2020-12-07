@@ -8,11 +8,8 @@
 """
 
 # System imports
-import time
 import logging
 from typing import Optional
-
-from .general import colour_item
 
 def get_logger(name: str) -> logging.Logger:
     """Gets the logger with the specified name
@@ -27,7 +24,9 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 def make_logger(
-    name: str, filename: Optional[str] = '', debug: Optional[bool] = False
+    name: str,
+    filename: Optional[str] = '',
+    debug: Optional[bool] = False,
 ) -> logging.Logger:
     """Creates a logger using the custom ProtoFormatter with options for
     file output.
@@ -46,10 +45,12 @@ def make_logger(
     level = logging.DEBUG if debug else logging.INFO
     logger.setLevel(level)
 
-    # Custom ANSI colour formatter
-    formatter = ProtoFormatter()
-
     # Using file logging, add FileHandler
+    formatter = logging.Formatter(
+        "[%(asctime)s] %(name)s::%(levelname)s -- %(message)s",
+        "%d-%m-%Y | %H:%M:%S"
+    )
+
     if filename:
         fh = logging.FileHandler(filename=filename)
         fh.setLevel(level)
@@ -63,51 +64,3 @@ def make_logger(
     logger.addHandler(sh)
 
     return logger
-
-
-class ProtoFormatter(logging.Formatter):
-    """Custom Formatter to support ANSI colouring
-
-    Inherits:
-        logging.Formatter: Base Formatter
-    """
-
-    def __init__(self):
-        super().__init__()
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Formats the LogRecord with custom formatting
-
-        Args:
-            record (logging.LogRecord): Record to format
-
-        Returns:
-            str: Formatted Text
-        """
-
-        # Get level and level number
-        level, levelno, msg = record.levelname, record.levelno, record.msg
-
-        # Colour level name depending on level severity
-        if levelno == logging.DEBUG:
-            level = colour_item(level, color='cyan')
-        elif levelno == logging.INFO:
-            level = colour_item(level, color='green')
-        elif levelno == logging.WARN:
-            level = colour_item(level, color='yellow', bold=True)
-            msg = colour_item(msg, color='yellow')
-        elif levelno == logging.ERROR:
-            level = colour_item(level, color='red', bold=True)
-            msg = colour_item(msg, color='red', bold=True)
-        elif levelno == logging.CRITICAL:
-            level = colour_item(level, color='red', bold=True)
-            msg = colour_item(msg, color='red')
-
-        # Log the current time
-        timestamp = time.strftime('%d-%m-%Y|%H:%M:%S')
-
-        # Colour the logger name
-        name = colour_item(record.name, color='magenta')
-
-        # Formatted message
-        return f'[{timestamp}] - {name}::{level} -- {msg}'
