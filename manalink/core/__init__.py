@@ -1,1 +1,1 @@
-from .rpc import ManaGem, ManaGemFinder
+from .rpc import ManaGem, ManaGemLinker
