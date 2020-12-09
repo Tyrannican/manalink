@@ -1,1 +1,2 @@
-from .rpc import ManaGem, ManaGemFinder
+from .rpc import ManaGem
+from . import prototools
