@@ -135,7 +135,6 @@ class ManaGem:
             [asyncio.create_task(method) for method in methods]
         )
 
-
     async def _server(self):
         """Main server loop for receiving connections from other nodes.
         Accepts incoming connections and passes them to the server handler.

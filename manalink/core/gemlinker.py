@@ -197,7 +197,7 @@ class ManaGemLinker:
 
         # Always run in the background
         while True:
-            # We already have a list of nodes, do nothgin
+            # We already have a list of nodes, do nothing
             if len(self.gems) > 0:
                 await asyncio.sleep(timer)
                 continue
@@ -206,7 +206,7 @@ class ManaGemLinker:
             for gem in self.seed_gems:
                 await self._update_gems(gem)
 
-            self.logger.warning(
+            self.logger.debug(
                 "No ManaGems can be found, falling back to initial gems."
             )
 
