@@ -21,19 +21,7 @@ from jsonrpc.jsonrpc2 import (
     JSONRPCInvalidRequestException
 )
 
-# Debug flag
-LIB_DEBUG = True
-
-# Use local path inclusion whilst in debug mode
-if LIB_DEBUG:
-    import sys
-    sys.path.append("..")
-
-    from manalink.tools import constants as cst
-
-# Use module structure in release mode
-else:
-    from ..tools import constants as cst
+from ..tools import constants as cst
 
 @dataclass
 class Address:
