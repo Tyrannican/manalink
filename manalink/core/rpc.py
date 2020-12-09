@@ -27,9 +27,6 @@ from jsonrpc.jsonrpc2 import (
     JSONRPC20Response
 )
 
-# Debug flag
-LIB_DEBUG = True
-
 class ManaGem:
     """Core of the P2P protocol.
     Exposes methods for facilitating communication between nodes using JSON RPC.
@@ -58,7 +55,7 @@ class ManaGem:
         host: str = "0.0.0.0",
         port: int = cst.DEFAULT_PORT,
         seed_nodes: Optional[List[str]] = [],
-        debug_mode: bool = LIB_DEBUG,
+        debug_mode: bool = False,
         message_buffer: int = cst.DEFAULT_BUFFER
     ):
         # Current address and port
@@ -73,11 +70,13 @@ class ManaGem:
         # Initiate logger
         self.logger = make_logger(self.name, debug=debug_mode)
 
-        self.finder = ManaGemLinker(
+        self.gemlinker = ManaGemLinker(
             self.address.host,
             seed_gems=self.gems,
             logger=get_logger(self.name)
         )
+
+        self._loop = asyncio.new_event_loop()
 
     @property
     def name(self) -> str:
@@ -93,7 +92,12 @@ class ManaGem:
         """Main run loop.
         """
 
-        pass
+        tasks = [
+            self.server(),
+            self.gemlinker.run()
+        ]
+
+        await asyncio.gather(*tasks, loop=self._loop)
 
     async def server(self):
         """Main server loop for receiving connections from other nodes.

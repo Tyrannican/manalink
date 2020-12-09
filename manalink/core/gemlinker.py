@@ -21,9 +21,6 @@ import asyncio
 from copy import copy
 from typing import Optional, List
 
-# Debug flag
-LIB_DEBUG = True
-
 class ManaGemLinker:
     """Main discovery protocol for the core protocol above. Each protocol that
     inherits from the core `ManaLink` protocol has this built into it. This
