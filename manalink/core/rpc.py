@@ -20,7 +20,7 @@ from .prototools import (
 
 # System imports
 import asyncio
-from typing import Optional, List, ByteString
+from typing import Optional, List, ByteString, Callable
 
 # External imports
 from jsonrpc.jsonrpc2 import (
@@ -70,12 +70,32 @@ class ManaGem:
         # Initiate logger
         self.logger = make_logger(self.name, debug=debug_mode)
 
+        # List of scheduled tasks to perform
+        self.task_schedule = []
+
         # GemLinker Protocol (Discovery)
         self.gemlinker = ManaGemLinker(
             self.address.host,
             seed_gems=self.gems,
             logger=get_logger(self.name)
         )
+
+        # Schedule these tasks at instantiation, background tasks
+        self.schedule(self._server(), self.gemlinker.run())
+
+    def __del__(self):
+        """Cancel each task in the task schedule on object deletion
+        """
+
+        # Iterate through all tasks in the schedule
+        for task in self.task_schedule:
+            # Cancel the task
+            try:
+                task.cancel()
+
+            # Ignore the fact that the rror is thrown when cancelled
+            except asyncio.CancelledError:
+                pass
 
     @property
     def name(self) -> str:
@@ -89,16 +109,34 @@ class ManaGem:
 
     async def run(self):
         """Main run loop.
+        Run for as long as there are incomplete scheduled tasks.
         """
 
-        tasks = [
-            self.server(),
-            self.gemlinker.run()
-        ]
+        while len(self.task_schedule) > 0:
+            self.task_schedule = [
+                task for task in self.task_schedule if task.done() is False
+            ]
+            await asyncio.sleep(1)
 
-        asyncio.gather(*tasks)
+    def schedule(self, *methods: Callable):
+        """Creates an `asyncio.Task` for each supplied method.
+        Each method is then ran in the background until either completion or
+        program termination.
 
-    async def server(self):
+        Args:
+            *methods (Callable, variable): Methods to schedule calls for. Calls
+            happen immediately and run in the background.
+
+        """
+
+        # Create list of tasks for each method and add to the protocol's
+        # task schedule.
+        self.task_schedule.extend(
+            [asyncio.create_task(method) for method in methods]
+        )
+
+
+    async def _server(self):
         """Main server loop for receiving connections from other nodes.
         Accepts incoming connections and passes them to the server handler.
         """
