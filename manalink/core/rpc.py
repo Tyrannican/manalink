@@ -80,8 +80,9 @@ class ManaGem:
             logger=get_logger(self.name)
         )
 
-        # Schedule these tasks at instantiation, background tasks
-        self.schedule(self._server(), self.gemlinker.run())
+        # Schedule these tasks at instantiation
+        # Accept incoming connections and run discovery in background
+        self.schedule(self._server(), self.gemlinker.link_gems())
 
     def __del__(self):
         """Cancel each task in the task schedule on object deletion
@@ -131,9 +132,24 @@ class ManaGem:
 
         # Create list of tasks for each method and add to the protocol's
         # task schedule.
-        self.task_schedule.extend(
-            [asyncio.create_task(method) for method in methods]
-        )
+        for method in methods:
+            self.task_schedule.extend([
+                asyncio.create_task(method, name=method.__name__)
+            ])
+
+    def cancel_task(self, *names: str):
+        """Cancels tasks with the supplied names.
+
+        Args:
+            names (str, variable): Task names to cancel
+        """
+
+        for task in self.task_schedule:
+            if task.name in names:
+                try:
+                    task.cancel()
+                except asyncio.CancelledError:
+                    pass
 
     async def _server(self):
         """Main server loop for receiving connections from other nodes.
