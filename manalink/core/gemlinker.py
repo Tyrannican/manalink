@@ -70,7 +70,7 @@ class ManaGemLinker:
         """
         return self.__class__.__name__
 
-    async def run(self):
+    async def link_gems(self):
         """Main execution loop for the finder protocol.
         """
 

@@ -15,12 +15,13 @@ from .prototools import (
     Address,
     generate_rpc_error,
     extract_rpc_request,
+    extract_rpc_response,
     create_json_rpc_response,
 )
 
 # System imports
 import asyncio
-from typing import Optional, List, ByteString, Callable
+from typing import Optional, List, ByteString, Callable, Any
 
 # External imports
 from jsonrpc.jsonrpc2 import (
@@ -80,8 +81,9 @@ class ManaGem:
             logger=get_logger(self.name)
         )
 
-        # Schedule these tasks at instantiation, background tasks
-        self.schedule(self._server(), self.gemlinker.run())
+        # Schedule these tasks at instantiation
+        # Accept incoming connections and run discovery in background
+        self.schedule(self._server(), self.gemlinker.link_gems())
 
     def __del__(self):
         """Cancel each task in the task schedule on object deletion
@@ -131,9 +133,24 @@ class ManaGem:
 
         # Create list of tasks for each method and add to the protocol's
         # task schedule.
-        self.task_schedule.extend(
-            [asyncio.create_task(method) for method in methods]
-        )
+        for method in methods:
+            self.task_schedule.extend([
+                asyncio.create_task(method, name=method.__name__)
+            ])
+
+    def cancel_task(self, *names: str):
+        """Cancels tasks with the supplied names.
+
+        Args:
+            names (str, variable): Task names to cancel
+        """
+
+        for task in self.task_schedule:
+            if task.name in names:
+                try:
+                    task.cancel()
+                except asyncio.CancelledError:
+                    pass
 
     async def _server(self):
         """Main server loop for receiving connections from other nodes.
@@ -222,8 +239,6 @@ class ManaGem:
                 )
             )
 
-        # TODO::Only allow accepted methods be called.
-
         # Call the method and wait on the result
         method_call = getattr(self, method)
         result = await method_call(*params)
@@ -231,6 +246,41 @@ class ManaGem:
 
         # Return results
         return create_json_rpc_response(rpc.id, result=result)
+
+    async def parse_response(self, response: ByteString) -> Optional[Any]:
+        """Parse an RPC to extract either the result or errors.
+
+        Args:
+            response (ByteString): JSON RPC response
+
+        Returns:
+            Optional[Any]: Results from the RPC or None if errors encountered.
+        """
+
+        # Convert the RPC response to RPC Response object
+        rpc = extract_rpc_response(response)
+
+        # No RPC, error occured when converting from bytes, return None
+        if rpc is None:
+            self.logger.error("Error occurred when parsing RPC response.")
+            return None
+
+        # Extract the results and errors
+        result, errors = rpc.result, rpc.error
+
+        # Errors present, log errors and return None
+        if errors is not None:
+            self.logger.debug("Errors encountered in RPC")
+            self.logger.warning(
+                f"Invoked RPC encountered errors:\
+ Code={errors.code} Message={errors.message} Data={errors.data}"
+            )
+
+            return None
+
+        # Return the results from the RPC
+        self.logger.debug(f"Result from RPC: {result}")
+        return result
 
 
 async def main():
