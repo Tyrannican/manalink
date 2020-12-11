@@ -18,7 +18,7 @@ from jsonrpc.jsonrpc2 import (
     JSONRPCError,
     JSONRPC20Request,
     JSONRPC20Response,
-    JSONRPCInvalidRequestException
+    JSONRPCInvalidRequestException,
 )
 
 from ..tools import constants as cst
@@ -66,8 +66,11 @@ def extract_rpc_response(response: ByteString) -> JSONRPC20Response:
         JSONRPC20Response: Response object
     """
 
-    response = response.decode("utf-8")
-    return JSONRPC20Response.from_json(response)
+    try:
+        response = response.decode("utf-8")
+        return JSONRPC20Response.from_json(response)
+    except (json.JSONDecodeError, JSONRPCError):
+        return None
 
 def generate_rpc_error(
     code: int, message: Optional[str] = "", data: Optional[Any] = None
